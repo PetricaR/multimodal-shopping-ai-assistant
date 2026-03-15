@@ -1,0 +1,1702 @@
+// =====================================================================
+// BRINGO CHEF AI - Updated for Gemini 2.5 Flash Native Audio (Dec 2025)
+// =====================================================================
+//
+// KEY UPDATES FROM LATEST DOCUMENTATION:
+//
+// 1. MODEL: gemini-2.5-flash-native-audio-preview-12-2025 (Latest Preview)
+//    - Latest preview model with enhanced voice quality and affective dialog
+//    - Improved Romanian language support
+//    - Better function calling with native audio
+//
+// 2. AUDIO CONFIG:
+//    - Input: 16kHz PCM audio (required for native audio)
+//    - Output: 24kHz PCM audio (model default)
+//    - Speech Config: languageCode: 'ro-RO' for Romanian
+//    - Optional voice selection (Puck, Charon, Kore, Fenrir, Aoede, Leda, Orus, Zephyr)
+//
+// 3. NEW FEATURES:
+//    - Affective Dialog: Enable emotion-aware responses
+//    - Thinking Mode: Configure thinking budget for complex reasoning
+//    - Enhanced transcription: Both input and output audio transcription
+//
+// 4. IMPROVED ERROR HANDLING:
+//    - Better WebSocket error reporting
+//    - Enhanced tool call error messages
+//    - Session reconnection logic
+//
+// 5. OPTIMIZATIONS:
+//    - Batched UI updates for better performance
+//    - Improved audio streaming with proper chunking
+//    - Better microphone handling with echo cancellation
+//
+// =====================================================================
+
+import React, { useState, useEffect, useRef } from 'react';
+import { FunctionDeclaration, GoogleGenAI, LiveServerMessage, Modality, Type } from '@google/genai';
+import { Product, AgentState, LogMessage } from './types';
+import {
+  searchProducts, searchByProductName, checkHealth, setApiLogger,
+  addToCart, removeFromCart, updateCartQuantity, clearCart, login, getRecipeIngredients, optimizeBudget, optimizeCart,
+  getUserProfile, updateUserProfile, proposeMealPlan, getMealPlanDetails,
+  getSystemConfig
+} from './services/api';
+import { AudioUtils, PCMStreamPlayer } from './services/audio';
+import { ProductCard } from './components/ProductCard';
+import { Visualizer } from './components/Visualizer';
+import { ChatMessage } from './components/ChatMessage';
+
+// =====================================================================
+// TOOL DEFINITIONS - Following Function Calling Best Practices
+// =====================================================================
+
+const findShoppingItemsTool: FunctionDeclaration = {
+  name: "find_shopping_items",
+  description: "Search for products in the shopping catalog. Can handle multiple queries for multi-store or list search.",
+  parameters: {
+    type: Type.OBJECT,
+    properties: {
+      queries: {
+        type: Type.ARRAY,
+        items: { type: Type.STRING },
+        description: "List of items to search (e.g. ['coffee', 'milk', 'bread']). Use multi_store=true for cross-store price comparison."
+      },
+      multi_store: {
+        type: Type.BOOLEAN,
+        description: "Set to true to search across ALL available stores for best price/quality."
+      },
+      limit: {
+        type: Type.NUMBER,
+        description: "Max products to display per query."
+      }
+    },
+    required: ["queries"]
+  }
+};
+
+const suggestSubstitutionTool: FunctionDeclaration = {
+  name: "suggest_substitution",
+  description: "Find intelligent substitutions for a specific product when an item is missing or out of stock.",
+  parameters: {
+    type: Type.OBJECT,
+    properties: {
+      product_name: { type: Type.STRING, description: "The name of the product that is unavailable." }
+    },
+    required: ["product_name"]
+  }
+};
+
+const addToCartTool: FunctionDeclaration = {
+  name: "add_to_cart",
+  description: "Add a product to the shopping cart. ALWAYS confirm with user before adding.",
+  parameters: {
+    type: Type.OBJECT,
+    properties: {
+      product_id: { type: Type.STRING, description: "The ID of the product to add." },
+      quantity: { type: Type.NUMBER, description: "Quantity to add. Default is 1." },
+      product_url: { type: Type.STRING, description: "URL of the product (optional)." },
+      product_name: { type: Type.STRING, description: "Name of the product (for logging/confirmation)." },
+      price: { type: Type.NUMBER, description: "Price of the product in RON (IMPORTANT: include this from search results)." }
+    },
+    required: ["product_id"]
+  }
+};
+
+const removeFromCartTool: FunctionDeclaration = {
+  name: "remove_from_cart",
+  description: "Remove a product completely from the shopping cart.",
+  parameters: {
+    type: Type.OBJECT,
+    properties: {
+      product_id: { type: Type.STRING, description: "The ID of the product to remove." },
+      product_name: { type: Type.STRING, description: "Name of the product (optional)." }
+    },
+    required: ["product_id"]
+  }
+};
+
+const updateCartQuantityTool: FunctionDeclaration = {
+  name: "update_cart_quantity",
+  description: "Update the quantity of a product already in the cart.",
+  parameters: {
+    type: Type.OBJECT,
+    properties: {
+      product_id: { type: Type.STRING, description: "The ID of the product to update." },
+      quantity: { type: Type.NUMBER, description: "New quantity for the product." },
+      product_name: { type: Type.STRING, description: "Name of the product (optional)." }
+    },
+    required: ["product_id", "quantity"]
+  }
+};
+
+const getRecipeIngredientsTool: FunctionDeclaration = {
+  name: "get_recipe_ingredients",
+  description: "Search for a recipe and extract a structured shopping list of ingredients.",
+  parameters: {
+    type: Type.OBJECT,
+    properties: {
+      food_name: { type: Type.STRING, description: "Name of the dish or recipe." }
+    },
+    required: ["food_name"]
+  }
+};
+
+const optimizeBudgetTool: FunctionDeclaration = {
+  name: "optimize_budget",
+  description: "Automatically adjust the shopping list to fit a specific budget while maximizing quality.",
+  parameters: {
+    type: Type.OBJECT,
+    properties: {
+      cache_key: { type: Type.STRING, description: "Key from previous find_shopping_items result." },
+      budget: { type: Type.NUMBER, description: "Maximum budget in RON." }
+    },
+    required: ["cache_key", "budget"]
+  }
+};
+
+const optimizeShoppingStrategyTool: FunctionDeclaration = {
+  name: "optimize_shopping_strategy",
+  description: "Compare shopping strategies: Cheapest Mixed vs Best Single Store.",
+  parameters: {
+    type: Type.OBJECT,
+    properties: {
+      cache_key: { type: Type.STRING, description: "Key from previous find_shopping_items result." }
+    },
+    required: ["cache_key"]
+  }
+};
+
+const proposeMealPlanTool: FunctionDeclaration = {
+  name: 'propose_meal_plan',
+  description: 'Generate a personalized daily meal plan proposal based on user profile, weather, and season.',
+};
+
+const getMealPlanDetailsTool: FunctionDeclaration = {
+  name: 'get_meal_plan_details',
+  description: 'Generate full recipe details (ingredients, instructions, nutrition) for a chosen meal plan.',
+  parameters: {
+    type: Type.OBJECT,
+    properties: {
+      meal_plan: {
+        type: Type.OBJECT,
+        description: 'Map of meal types to recipe names',
+        properties: {
+          breakfast: { type: Type.STRING },
+          lunch: { type: Type.STRING },
+          dinner: { type: Type.STRING },
+          snack: { type: Type.STRING }
+        }
+      }
+    },
+    required: ['meal_plan']
+  }
+};
+
+const manageUserProfileTool: FunctionDeclaration = {
+  name: 'manage_user_profile',
+  description: 'View or update user physical stats, dietary constraints, and budget.',
+  parameters: {
+    type: Type.OBJECT,
+    properties: {
+      action: { type: Type.STRING, description: 'Either "view" or "update"' },
+      profile_update: {
+        type: Type.OBJECT,
+        description: 'Partial user profile data if updating',
+        properties: {
+          physical: { type: Type.OBJECT },
+          dietary: { type: Type.OBJECT },
+          preferences: { type: Type.OBJECT },
+          finance: { type: Type.OBJECT }
+        }
+      }
+    },
+    required: ['action']
+  }
+};
+
+// =====================================================================
+// SYSTEM INSTRUCTION - Optimized for Romanian Voice Interaction
+// =====================================================================
+
+const SYSTEM_INSTRUCTION = `You are Shopping AI Assistant, an AI shopping assistant that helps users find products, recipes, and meal plans. You can analyze images of food, ingredients, or products.
+
+# CORE BEHAVIOR
+LANGUAGE: Always respond in English
+TONE: Professional yet warm, like a helpful personal shopper or nutritionist
+BREVITY: Maximum 2-3 sentences per response
+
+# AVAILABLE TOOLS & WHEN TO USE
+1. find_shopping_items(queries[], multi_store, limit)
+   → USE WHEN: User asks to search/find products
+   → EXAMPLE: "find milk" → call with queries=["milk"]
+
+2. add_to_cart(product_id, quantity, product_name, price)
+   → USE WHEN: User confirms adding (says "yes", "add", "ok", "sure")
+   → CRITICAL: MUST include price from search results
+   → NEVER say "added" without calling this tool first
+
+3. get_recipe_ingredients(food_name)
+   → USE WHEN: User asks about recipe ingredients
+
+4. propose_meal_plan()
+   → USE WHEN: User asks for meal plan suggestions
+
+# INTERACTION PATTERN (STRICT)
+User says: "find coffee"
+└─> YOU: Call find_shopping_items(["coffee"])
+└─> YOU: "Found coffee. Would you like the first option (X RON)?"
+└─> User: "yes" / "add it"
+    └─> YOU: Call add_to_cart(id, 1, name, price) ← MUST CALL TOOL!
+    └─> YOU: "✓ Added [name] to your cart."
+
+# IMAGE ANALYSIS
+When the user sends an image, analyze it and:
+1. Identify visible food items, ingredients, or products
+2. Suggest what to cook or buy based on what you see
+3. Offer to search for missing ingredients or complementary products
+4. Always call find_shopping_items after analyzing an image
+
+# EXAMPLES (Few-Shot Learning)
+
+Example 1: Simple Search
+User: "find bread"
+Assistant: [calls find_shopping_items(["bread"])]
+Assistant: "Found white bread (5.50 RON) and whole grain bread (6.20 RON). Which do you prefer?"
+
+Example 2: Add to Cart
+User: "the first one"
+Assistant: [calls add_to_cart(product_id="123", quantity=1, product_name="White bread", price=5.50)]
+Assistant: "✓ Added white bread to your cart (5.50 RON)."
+
+Example 3: Multi-item Search
+User: "find milk and coffee"
+Assistant: [calls find_shopping_items(["milk", "coffee"])]
+Assistant: "Found milk (12.50 RON) and coffee (35.99 RON). Shall I add both?"
+
+Example 4: Image Analysis
+User: [sends image of tomatoes, cheese, pasta]
+Assistant: "I see tomatoes, cheese, and pasta. You could make a pasta with tomato sauce! Let me search for the missing ingredients."
+Assistant: [calls find_shopping_items(["tomato sauce", "parmesan", "olive oil"])]
+
+# DECISION TREE
+IF user_input contains ["find", "search", "look for", "I want", "get me"]:
+  └─> CALL find_shopping_items
+  └─> Present top results with price
+  └─> Ask which to add
+
+IF user_input matches ["yes", "add", "ok", "sure", "the first", "that one"]:
+  └─> CALL add_to_cart WITH price parameter
+  └─> Confirm addition
+  └─> Ask "Anything else?"
+
+IF user_input contains ["recipe", "ingredients", "how to make"]:
+  └─> CALL get_recipe_ingredients
+  └─> Present ingredients
+  └─> Offer to search for them
+
+# CRITICAL RULES
+1. ALWAYS use tools (don't fake responses)
+2. ALWAYS include price in add_to_cart
+3. NEVER say "added" without calling add_to_cart tool
+4. Format prices: XX.XX RON
+5. Confirm user intent before adding
+6. Always respond in English
+`;
+
+const SUGGESTIONS = [
+  "What should I cook today?",
+  "I have a budget of 100",
+  "Vegetarian recipe",
+  "Daily meal plan",
+  "Search for coffee",
+  "Upload an image with ingredients"
+];
+
+interface ChatMessage {
+  role: 'user' | 'agent';
+  text: string;
+  timestamp: string;
+}
+
+interface CartItem {
+  product_id: string;
+  product_name: string;
+  price: number;
+  quantity: number;
+  image_url?: string;
+}
+
+// =====================================================================
+// TOOLS CONFIG
+// =====================================================================
+
+const toolsConfig = {
+  tools: [
+    {
+      functionDeclarations: [
+        findShoppingItemsTool, suggestSubstitutionTool, addToCartTool, removeFromCartTool, 
+        updateCartQuantityTool, getRecipeIngredientsTool, optimizeBudgetTool, 
+        optimizeShoppingStrategyTool, proposeMealPlanTool, getMealPlanDetailsTool, 
+        manageUserProfileTool
+      ]
+    }
+  ],
+};
+
+// =====================================================================
+// MAIN COMPONENT
+// =====================================================================
+
+function App() {
+  // State management
+  const [currentPage, setCurrentPage] = useState<'login' | 'chat'>('login');
+  const [isCheckingAuth, setIsCheckingAuth] = useState(true);
+  const [apiKey, setApiKey] = useState<string>('');
+  const [products, setProducts] = useState<Product[]>([]);
+  const [isSubstitutionMode, setIsSubstitutionMode] = useState<boolean>(false);
+  const [chatHistory, setChatHistory] = useState<ChatMessage[]>([]);
+  const [logs, setLogs] = useState<LogMessage[]>([]);
+  const [agentState, setAgentState] = useState<AgentState>(AgentState.DISCONNECTED);
+  const [errorMsg, setErrorMsg] = useState<string | null>(null);
+  const [textInput, setTextInput] = useState('');
+  const [logsExpanded, setLogsExpanded] = useState(false);
+  const [isSoundEnabled, setIsSoundEnabled] = useState(false);
+  const [uploadedImagePreview, setUploadedImagePreview] = useState<string | null>(null);
+  const imageInputRef = useRef<HTMLInputElement>(null);
+
+  // Cart state
+  const [cartItems, setCartItems] = useState<CartItem[]>([]);
+  const [cartOpen, setCartOpen] = useState(true);
+
+  // Auth state
+  const [bringoUsername, setBringoUsername] = useState('');
+  const [bringoPassword, setBringoPassword] = useState('');
+  const [showPassword, setShowPassword] = useState(false);
+  const [bringoAuthStatus, setBringoAuthStatus] = useState<'none' | 'loading' | 'authenticated' | 'error'>('none');
+  const [bringoAuthMsg, setBringoAuthMsg] = useState('');
+  const [selectedStore, setSelectedStore] = useState('carrefour_park_lake');
+
+  // Audio state
+  const [isMicEnabled, setIsMicEnabled] = useState(true);
+  const inputAudioContextRef = useRef<AudioContext | null>(null);
+  const outputAudioContextRef = useRef<AudioContext | null>(null);
+  const inputSourceRef = useRef<MediaStreamAudioSourceNode | null>(null);
+  const audioPlayerRef = useRef<PCMStreamPlayer | null>(null);
+  const processorRef = useRef<ScriptProcessorNode | null>(null);
+  const liveSessionRef = useRef<any>(null);
+  const isMicEnabledRef = useRef(false);
+  const isSoundEnabledRef = useRef(false);
+
+  // Streaming buffers
+  const userStreamingTextRef = useRef<string>('');
+  const agentStreamingTextRef = useRef<string>('');
+  const lastUIUpdateRef = useRef<number>(0);
+  const currentStreamingRole = useRef<'user' | 'agent' | null>(null);
+  const UI_UPDATE_THROTTLE_MS = 100; // Update UI every 100ms for smoother streaming
+
+  // Scroll refs
+  const chatEndRef = useRef<HTMLDivElement>(null);
+  const logsEndRef = useRef<HTMLDivElement>(null);
+
+  // =====================================================================
+  // INITIALIZATION
+  // =====================================================================
+
+  useEffect(() => {
+    const loadConfig = async () => {
+      const cfg = await getSystemConfig();
+      if (cfg?.google_api_key) {
+        setApiKey(cfg.google_api_key);
+      }
+    };
+    loadConfig();
+  }, []);
+
+  useEffect(() => {
+    const checkSavedSession = async () => {
+      const savedSession = localStorage.getItem('bringo_session');
+
+      if (savedSession) {
+        try {
+          const session = JSON.parse(savedSession);
+          const hoursSinceLogin = (Date.now() - session.timestamp) / (1000 * 60 * 60);
+
+          if (hoursSinceLogin < 12) {
+            setBringoUsername(session.username);
+            setBringoPassword(session.password);
+            addLog('system', `Auto-login: ${session.username}`);
+
+            const success = await login(session.username, session.password);
+            if (success) {
+              setBringoAuthStatus('authenticated');
+              setBringoAuthMsg(`Logged in as ${session.username}`);
+              setCurrentPage('chat');
+              addLog('system', 'AUTO-LOGIN: SUCCESS');
+            } else {
+              localStorage.removeItem('bringo_session');
+              addLog('system', 'AUTO-LOGIN: FAILED');
+            }
+          } else {
+            localStorage.removeItem('bringo_session');
+            addLog('system', 'AUTO-LOGIN: Session expired');
+          }
+        } catch (e) {
+          localStorage.removeItem('bringo_session');
+          addLog('system', 'AUTO-LOGIN: Error');
+        }
+      }
+
+      setIsCheckingAuth(false);
+    };
+
+    checkSavedSession();
+  }, []);
+
+  useEffect(() => {
+    chatEndRef.current?.scrollIntoView({ behavior: "smooth" });
+  }, [chatHistory]);
+
+  useEffect(() => {
+    logsEndRef.current?.scrollIntoView({ behavior: "smooth" });
+  }, [logs]);
+
+  useEffect(() => {
+    checkHealth().then(isHealthy => {
+      const status = isHealthy ? "ONLINE" : "OFFLINE";
+      addLog('system', `API HEALTH: ${status}`);
+      if (!isHealthy) {
+        setErrorMsg("Shopping AI API is not accessible!");
+      }
+    });
+
+    setApiLogger((msg) => addLog('system', msg));
+
+    return () => { disconnect(); };
+  }, []);
+
+  useEffect(() => {
+    isMicEnabledRef.current = isMicEnabled;
+  }, [isMicEnabled]);
+
+  useEffect(() => {
+    isSoundEnabledRef.current = isSoundEnabled;
+  }, [isSoundEnabled]);
+
+  // =====================================================================
+  // HELPER FUNCTIONS
+  // =====================================================================
+
+  const addLog = (sender: 'user' | 'agent' | 'system', text: string) => {
+    setLogs(prev => [...prev.slice(-50), { timestamp: new Date().toLocaleTimeString(), sender, text }]);
+  };
+
+  const addChatMessage = (role: 'user' | 'agent', text: string) => {
+    setChatHistory(prev => [...prev, { role, text, timestamp: new Date().toLocaleTimeString() }]);
+  };
+
+  const updateLastChatMessage = (role: 'user' | 'agent', text: string) => {
+    setChatHistory(prev => {
+      const lastIndex = prev.length - 1;
+      if (lastIndex >= 0 && prev[lastIndex].role === role) {
+        const updated = [...prev];
+        updated[lastIndex] = { ...updated[lastIndex], text };
+        return updated;
+      }
+      // Don't add new message if no match - only update existing
+      return prev;
+    });
+  };
+
+  const formatPrice = (price: number): string => {
+    return price.toFixed(2).replace('.', ',');
+  };
+
+  // Cart helpers
+  const addItemToLocalCart = (product: { product_id: string; product_name: string; price: number; image_url?: string }, qty: number = 1) => {
+    setCartItems(prev => {
+      const existing = prev.find(c => c.product_id === product.product_id);
+      if (existing) {
+        return prev.map(c => c.product_id === product.product_id ? { ...c, quantity: c.quantity + qty } : c);
+      }
+      return [...prev, { ...product, quantity: qty }];
+    });
+    setCartOpen(true);
+  };
+
+  const removeFromLocalCart = (product_id: string) => {
+    setCartItems(prev => prev.filter(c => c.product_id !== product_id));
+  };
+
+  const updateLocalCartQuantity = (product_id: string, qty: number) => {
+    setCartItems(prev => {
+      if (qty <= 0) return prev.filter(c => c.product_id !== product_id);
+      return prev.map(c => c.product_id === product_id ? { ...c, quantity: qty } : c);
+    });
+  };
+
+  const cartTotal = cartItems.reduce((sum, item) => sum + item.price * item.quantity, 0);
+
+  // =====================================================================
+  // CONNECTION MANAGEMENT - Updated for Gemini 2.5 Flash
+  // =====================================================================
+
+  const disconnect = () => {
+    audioPlayerRef.current?.stop();
+    if (processorRef.current) { processorRef.current.disconnect(); processorRef.current = null; }
+    if (inputSourceRef.current) { inputSourceRef.current.disconnect(); inputSourceRef.current = null; }
+    if (inputAudioContextRef.current?.state !== 'closed') inputAudioContextRef.current?.close();
+    if (outputAudioContextRef.current?.state !== 'closed') outputAudioContextRef.current?.close();
+    inputAudioContextRef.current = null;
+    outputAudioContextRef.current = null;
+    liveSessionRef.current = null;
+    setAgentState(AgentState.DISCONNECTED);
+    setIsMicEnabled(false);
+    addLog('system', 'SESSION ENDED');
+  };
+
+  const logout = () => {
+    disconnect();
+    localStorage.removeItem('bringo_session');
+    setBringoAuthStatus('none');
+    setBringoAuthMsg('');
+    setBringoUsername('');
+    setBringoPassword('');
+    setCurrentPage('login');
+    addLog('system', 'LOGOUT: Session cleared');
+  };
+
+  const connect = async () => {
+    let keyToUse = apiKey;
+    if (!keyToUse) {
+      addLog('system', 'Loading API key from Secret Manager...');
+      const cfg = await getSystemConfig();
+      if (cfg?.google_api_key) {
+        keyToUse = cfg.google_api_key;
+        setApiKey(keyToUse);
+        addLog('system', '✅ API key loaded');
+      } else {
+        setErrorMsg("Gemini API key is missing!");
+        return;
+      }
+    }
+
+    try {
+      setAgentState(AgentState.CONNECTING);
+      setErrorMsg(null);
+      addLog('system', 'CONNECTING...');
+
+      // Initialize audio contexts
+      const AudioContextClass = window.AudioContext || (window as any).webkitAudioContext;
+      inputAudioContextRef.current = new AudioContextClass({ sampleRate: 16000 });
+      outputAudioContextRef.current = new AudioContextClass({ sampleRate: 24000 });
+      audioPlayerRef.current = new PCMStreamPlayer(outputAudioContextRef.current);
+
+      // Request microphone
+      addLog('system', 'Requesting microphone...');
+      const stream = await navigator.mediaDevices.getUserMedia({
+        audio: {
+          echoCancellation: true,
+          noiseSuppression: true,
+          autoGainControl: true,
+          channelCount: 1
+        }
+      });
+      addLog('system', '✅ Microphone granted');
+
+      // Initialize Gemini AI
+      addLog('system', 'Initializing Gemini AI...');
+      const ai = new GoogleGenAI({ apiKey: keyToUse });
+
+      // =====================================================================
+      // GEMINI 2.5 FLASH NATIVE AUDIO - Preview (December 2025)
+      // =====================================================================
+      const sessionPromise = ai.live.connect({
+        model: 'gemini-2.5-flash-native-audio-preview-12-2025',
+        config: {
+          responseModalities: isSoundEnabledRef.current ? [Modality.AUDIO] : [Modality.TEXT],
+          systemInstruction: SYSTEM_INSTRUCTION,
+          tools: toolsConfig.tools,
+          inputAudioTranscription: {},
+          ...(isSoundEnabledRef.current ? { outputAudioTranscription: {} } : {}),
+          ...(isSoundEnabledRef.current ? {
+            speechConfig: {
+              languageCode: 'en-US',
+            }
+          } : {}),
+        },
+        callbacks: {
+          onopen: () => {
+            setAgentState(AgentState.LISTENING);
+            addLog('system', 'CONNECTION ESTABLISHED');
+
+            sessionPromise.then(session => {
+              liveSessionRef.current = session;
+              addLog('system', '✅ Session initialized');
+            }).catch(err => {
+              console.error('Session error:', err);
+              addLog('system', `❌ Session failed: ${err?.message}`);
+              setAgentState(AgentState.DISCONNECTED);
+            });
+
+            // Setup audio processing
+            if (!inputAudioContextRef.current) return;
+            const ctx = inputAudioContextRef.current;
+            const source = ctx.createMediaStreamSource(stream);
+            inputSourceRef.current = source;
+            const processor = ctx.createScriptProcessor(4096, 1, 1);
+            processorRef.current = processor;
+
+            processor.onaudioprocess = (e) => {
+              if (!isMicEnabledRef.current) return;
+
+              const inputData = e.inputBuffer.getChannelData(0);
+              const resampledData = AudioUtils.resample(inputData, ctx.sampleRate, 16000);
+              const pcmBuffer = AudioUtils.floatTo16BitPCM(resampledData);
+              const base64Data = AudioUtils.base64Encode(new Uint8Array(pcmBuffer));
+
+              if (liveSessionRef.current) {
+                liveSessionRef.current.sendRealtimeInput({
+                  media: { mimeType: 'audio/pcm;rate=16000', data: base64Data }
+                });
+              }
+            };
+
+            source.connect(processor);
+            processor.connect(ctx.destination);
+
+            if (ctx.state === 'suspended') ctx.resume();
+            if (outputAudioContextRef.current?.state === 'suspended') outputAudioContextRef.current.resume();
+          },
+
+          onmessage: async (msg: LiveServerMessage) => {
+            let hasUpdates = false;
+
+            // User speech transcript
+            if (msg.serverContent?.inputTranscription?.text) {
+              const newText = msg.serverContent.inputTranscription.text;
+              userStreamingTextRef.current += newText;
+
+              // Start new user message if not already streaming
+              if (currentStreamingRole.current !== 'user') {
+                currentStreamingRole.current = 'user';
+                addChatMessage('user', userStreamingTextRef.current);
+              }
+              hasUpdates = true;
+            }
+
+            // Agent speech transcript (AUDIO modality)
+            if (msg.serverContent?.outputTranscription?.text) {
+              const newText = msg.serverContent.outputTranscription.text;
+              agentStreamingTextRef.current += newText;
+
+              if (currentStreamingRole.current !== 'agent') {
+                currentStreamingRole.current = 'agent';
+                addChatMessage('agent', agentStreamingTextRef.current);
+              }
+              hasUpdates = true;
+            }
+
+            // Agent text response (TEXT modality)
+            if (msg.serverContent?.modelTurn?.parts) {
+              for (const part of msg.serverContent.modelTurn.parts) {
+                if (part.text) {
+                  agentStreamingTextRef.current += part.text;
+                  if (currentStreamingRole.current !== 'agent') {
+                    currentStreamingRole.current = 'agent';
+                    addChatMessage('agent', agentStreamingTextRef.current);
+                  }
+                  hasUpdates = true;
+                }
+              }
+            }
+
+            // Audio playback (AUDIO modality only)
+            const audioData = msg.serverContent?.modelTurn?.parts?.[0]?.inlineData?.data;
+            if (audioData && isSoundEnabledRef.current) {
+              setAgentState(AgentState.SPEAKING);
+              audioPlayerRef.current?.playChunk(audioData);
+            }
+
+            // Update UI (throttled for smooth streaming)
+            if (hasUpdates) {
+              const now = Date.now();
+              const timeSinceLastUpdate = now - lastUIUpdateRef.current;
+
+              if (timeSinceLastUpdate >= UI_UPDATE_THROTTLE_MS) {
+                if (currentStreamingRole.current === 'user' && userStreamingTextRef.current.trim()) {
+                  updateLastChatMessage('user', userStreamingTextRef.current.trim());
+                }
+                if (currentStreamingRole.current === 'agent' && agentStreamingTextRef.current.trim()) {
+                  updateLastChatMessage('agent', agentStreamingTextRef.current.trim());
+                }
+                lastUIUpdateRef.current = now;
+              }
+            }
+
+            // Interruption
+            if (msg.serverContent?.interrupted) {
+              audioPlayerRef.current?.stop();
+
+              // Finalize any streaming message
+              if (currentStreamingRole.current === 'agent' && agentStreamingTextRef.current.trim()) {
+                updateLastChatMessage('agent', agentStreamingTextRef.current.trim());
+                addLog('agent', agentStreamingTextRef.current.trim());
+              }
+
+              agentStreamingTextRef.current = '';
+              currentStreamingRole.current = null;
+              addLog('system', 'INTERRUPTED');
+              setAgentState(AgentState.LISTENING);
+            }
+
+            // Turn complete
+            if (msg.serverContent?.turnComplete) {
+              // Finalize user message if exists
+              if (userStreamingTextRef.current.trim()) {
+                updateLastChatMessage('user', userStreamingTextRef.current.trim());
+                addLog('user', userStreamingTextRef.current.trim());
+                userStreamingTextRef.current = '';
+              }
+
+              // Finalize agent message if exists
+              if (agentStreamingTextRef.current.trim()) {
+                updateLastChatMessage('agent', agentStreamingTextRef.current.trim());
+                addLog('agent', agentStreamingTextRef.current.trim());
+                agentStreamingTextRef.current = '';
+              }
+
+              currentStreamingRole.current = null;
+              lastUIUpdateRef.current = 0;
+
+              if (!audioPlayerRef.current?.isPlaying) {
+                setAgentState(AgentState.LISTENING);
+              }
+            }
+
+            // Tool calls
+            if (msg.toolCall) {
+              setAgentState(AgentState.THINKING);
+              const toolNames = msg.toolCall.functionCalls?.map(c => c.name).join(', ');
+              addLog('system', `🔧 TOOL CALL: ${toolNames}`);
+              console.log('Tool calls received:', msg.toolCall.functionCalls);
+
+              for (const call of msg.toolCall.functionCalls) {
+                addLog('agent', `▶️ EXEC: ${call.name}`);
+                console.log(`Executing ${call.name} with args:`, call.args);
+                let result: any = {};
+
+                try {
+                  // Execute tool calls
+                  if (call.name === 'find_shopping_items') {
+                    const args = call.args as any;
+                    const uniqueProducts = await searchProducts(args.queries, args.multi_store || false, args.limit || 12);
+                    setProducts(uniqueProducts);
+                    setIsSubstitutionMode(false);
+                    addLog('system', `FOUND ${uniqueProducts.length} products`);
+                    result = { products: uniqueProducts.map(p => ({ id: p.product_id, name: p.product_name, price: p.price, store: p.producer })) };
+                  }
+                  else if (call.name === 'suggest_substitution') {
+                    const args = call.args as any;
+                    const data = await searchByProductName(args.product_name, 10);
+                    setProducts(data);
+                    setIsSubstitutionMode(true);
+                    result = { substitutions: data.map(p => ({ id: p.product_id, name: p.product_name, price: p.price })) };
+                  }
+                  else if (call.name === 'add_to_cart') {
+                    const args = call.args as any;
+                    const qty = args.quantity || 1;
+                    const productName = args.product_name || args.product_id;
+                    const providedPrice = args.price; // Price from AI's search results
+
+                    addLog('system', `🛒 ADD TO CART: ${productName} (qty: ${qty}, price: ${providedPrice || '?'})`);
+                    console.log('Adding to cart:', { product_id: args.product_id, quantity: qty, name: productName, price: providedPrice });
+
+                    const data = await addToCart(args.product_id, qty, args.product_url, args.product_name);
+
+                    const addedProduct = data.items_added?.[0] || {};
+                    const foundProduct = products.find(p => p.product_id === args.product_id);
+
+                    // Priority: AI-provided price > API response > found product > 0
+                    const finalPrice = providedPrice || addedProduct.price || foundProduct?.price || 0;
+
+                    const cartItem = {
+                      product_id: args.product_id,
+                      product_name: addedProduct.product_name || args.product_name || foundProduct?.product_name || args.product_id,
+                      price: finalPrice,
+                      image_url: addedProduct.image_url || foundProduct?.image_url || foundProduct?.images?.[0]
+                    };
+
+                    addItemToLocalCart(cartItem, qty);
+                    addLog('system', `✅ Added ${cartItem.product_name} to cart (${finalPrice} RON)`);
+                    console.log('Cart updated:', cartItem);
+
+                    result = {
+                      success: true,
+                      message: `Product "${cartItem.product_name}" has been added to cart! (Quantity: ${qty}, Price: ${finalPrice} RON)`
+                    };
+                  }
+                  else if (call.name === 'remove_from_cart') {
+                    const args = call.args as any;
+                    await removeFromCart(args.product_id);
+                    removeFromLocalCart(args.product_id);
+                    result = { success: true, message: "Product removed from cart." };
+                  }
+                  else if (call.name === 'update_cart_quantity') {
+                    const args = call.args as any;
+                    await updateCartQuantity(args.product_id, args.quantity);
+                    updateLocalCartQuantity(args.product_id, args.quantity);
+                    result = { success: true, message: `Quantity updated to ${args.quantity}.` };
+                  }
+                  else if (call.name === 'get_recipe_ingredients') {
+                    const args = call.args as any;
+                    result = await getRecipeIngredients(args.food_name);
+                  }
+                  else if (call.name === 'optimize_budget') {
+                    const args = call.args as any;
+                    result = await optimizeBudget(args.cache_key, args.budget);
+                  }
+                  else if (call.name === 'optimize_shopping_strategy') {
+                    const args = call.args as any;
+                    result = await optimizeCart(args.cache_key);
+                  }
+                  else if (call.name === 'propose_meal_plan') {
+                    result = await proposeMealPlan();
+                  }
+                  else if (call.name === 'get_meal_plan_details') {
+                    const args = call.args as any;
+                    result = await getMealPlanDetails(args.meal_plan);
+                  }
+                  else if (call.name === 'manage_user_profile') {
+                    const args = call.args as any;
+                    result = args.action === 'view' ? await getUserProfile() : await updateUserProfile(args.profile_update);
+                  }
+                } catch (err) {
+                  const errorMsg = err instanceof Error ? err.message : String(err);
+                  addLog('system', `❌ ERROR (${call.name}): ${errorMsg}`);
+                  console.error(`Tool error (${call.name}):`, err);
+                  result = { error: `Failed: ${errorMsg}` };
+                }
+
+                // Send result back to AI
+                if (liveSessionRef.current) {
+                  console.log(`Sending tool response for ${call.name}:`, result);
+                  addLog('system', `📤 Sending result for ${call.name}`);
+                  liveSessionRef.current.sendToolResponse({
+                    functionResponses: [{ name: call.name, id: call.id, response: result }]
+                  });
+                }
+              }
+            }
+          },
+
+          onclose: (event: any) => {
+            setAgentState(AgentState.DISCONNECTED);
+            addLog('system', `CONNECTION CLOSED - ${event?.code}: ${event?.reason || 'Unknown'}`);
+          },
+
+          onerror: (err) => {
+            console.error("Live session error:", err);
+            setAgentState(AgentState.DISCONNECTED);
+            setErrorMsg("Gemini Live connection error");
+            addLog('system', `CONNECTION ERROR: ${err?.message || 'Unknown'}`);
+          }
+        }
+      });
+
+    } catch (err) {
+      console.error(err);
+      setErrorMsg("Could not connect to Gemini Live");
+      setAgentState(AgentState.DISCONNECTED);
+      addLog('system', `FATAL ERROR: ${err}`);
+    }
+  };
+
+  // =====================================================================
+  // TEXT INPUT
+  // =====================================================================
+
+  const handleTextSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!textInput.trim() || agentState === AgentState.DISCONNECTED) return;
+    
+    const query = textInput.trim();
+    setTextInput('');
+    addChatMessage('user', query);
+    addLog('user', query);
+    
+    if (liveSessionRef.current) {
+      liveSessionRef.current.sendClientContent({ turns: [{ parts: [{ text: query }] }] });
+    }
+  };
+
+  const sendSuggestion = (text: string) => {
+    if (agentState === AgentState.DISCONNECTED) return;
+    addChatMessage('user', text);
+    addLog('user', text);
+    if (liveSessionRef.current) {
+      liveSessionRef.current.sendClientContent({ turns: [{ parts: [{ text }] }] });
+    }
+  };
+
+  // =====================================================================
+  // IMAGE UPLOAD
+  // =====================================================================
+
+  const handleImageUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file || agentState === AgentState.DISCONNECTED) return;
+
+    const reader = new FileReader();
+    reader.onload = () => {
+      const dataUrl = reader.result as string;
+      const base64Data = dataUrl.split(',')[1];
+      const mimeType = file.type || 'image/jpeg';
+
+      setUploadedImagePreview(dataUrl);
+      addChatMessage('user', `[Image: ${file.name}]`);
+      addLog('user', `IMAGE UPLOAD: ${file.name} (${mimeType})`);
+
+      if (liveSessionRef.current) {
+        liveSessionRef.current.sendClientContent({
+          turns: [{
+            parts: [
+              { inlineData: { mimeType, data: base64Data } },
+              { text: 'Analyze this image. What products, ingredients, or food items do you see? Based on what you identify, what do you recommend I buy or cook? Search for the relevant products in the catalog.' }
+            ]
+          }]
+        });
+      }
+    };
+    reader.readAsDataURL(file);
+    if (imageInputRef.current) imageInputRef.current.value = '';
+  };
+
+  // =====================================================================
+  // BRINGO LOGIN
+  // =====================================================================
+
+  const handleBringoLogin = async () => {
+    if (!bringoUsername || !bringoPassword) {
+      setBringoAuthMsg('Please enter your email and password.');
+      setBringoAuthStatus('error');
+      return;
+    }
+    
+    setBringoAuthStatus('loading');
+    setBringoAuthMsg('');
+    addLog('system', `BRINGO LOGIN: ${bringoUsername}`);
+    
+    try {
+      const success = await login(bringoUsername, bringoPassword);
+      if (success) {
+        localStorage.setItem('bringo_session', JSON.stringify({
+          username: bringoUsername,
+          password: bringoPassword,
+          timestamp: Date.now()
+        }));
+
+        setBringoAuthStatus('authenticated');
+        setBringoAuthMsg(`Logged in as ${bringoUsername}`);
+        addLog('system', 'BRINGO AUTH: SUCCESS');
+        setTimeout(() => setCurrentPage('chat'), 1500);
+      } else {
+        setBringoAuthStatus('error');
+        setBringoAuthMsg('Authentication failed.');
+        addLog('system', 'BRINGO AUTH: FAILED');
+      }
+    } catch (err) {
+      setBringoAuthStatus('error');
+      setBringoAuthMsg('Authentication error.');
+      addLog('system', `BRINGO AUTH ERROR: ${err}`);
+    }
+  };
+
+  // =====================================================================
+  // CART ACTIONS
+  // =====================================================================
+
+  const handleAddToCart = async (product: Product) => {
+    try {
+      await addToCart(product.product_id, 1, undefined, product.product_name);
+      const img = product.image_url || product.images?.[0];
+      addItemToLocalCart({
+        product_id: product.product_id,
+        product_name: product.product_name,
+        price: product.price || 0,
+        image_url: img
+      });
+      addLog('system', `ADDED: ${product.product_name}`);
+    } catch (err) {
+      setErrorMsg(`Could not add ${product.product_name}`);
+    }
+  };
+
+  const handleRemoveFromCart = async (product_id: string, product_name: string) => {
+    try {
+      await removeFromCart(product_id);
+      removeFromLocalCart(product_id);
+      addLog('system', `REMOVED: ${product_name}`);
+    } catch (err) {
+      setErrorMsg(`Could not remove ${product_name}`);
+    }
+  };
+
+  const handleUpdateQuantity = async (product_id: string, product_name: string, newQty: number) => {
+    if (newQty <= 0) {
+      handleRemoveFromCart(product_id, product_name);
+      return;
+    }
+    try {
+      await updateCartQuantity(product_id, newQty);
+      updateLocalCartQuantity(product_id, newQty);
+    } catch (err) {
+      setErrorMsg(`Could not update ${product_name}`);
+    }
+  };
+
+  const handleClearCart = async () => {
+    if (cartItems.length === 0 || !window.confirm("Are you sure you want to clear the cart?")) return;
+    
+    try {
+      await clearCart();
+      setCartItems([]);
+      addLog('system', 'CART CLEARED');
+    } catch (err) {
+      setErrorMsg("Could not clear the cart");
+    }
+  };
+
+  // =====================================================================
+  // RENDER
+  // =====================================================================
+
+  if (isCheckingAuth) {
+    return (
+      <div className="min-h-screen bg-[#0B0F19] flex items-center justify-center">
+        <div className="text-center">
+          <div className="w-16 h-16 mx-auto mb-4 bg-gradient-to-br from-blue-500 to-blue-700 rounded-2xl flex items-center justify-center shadow-2xl animate-pulse">
+            <span className="text-3xl">🛒</span>
+          </div>
+          <p className="text-gray-400 text-sm">Loading...</p>
+        </div>
+      </div>
+    );
+  }
+
+  // =====================================================================
+  // LOGIN PAGE
+  // =====================================================================
+  if (currentPage === 'login') {
+    return (
+      <div className="min-h-screen bg-[#080C14] flex items-center justify-center p-4 font-sans relative overflow-hidden">
+        {/* Ambient glow blobs */}
+        <div className="absolute inset-0 pointer-events-none overflow-hidden">
+          <div className="absolute -top-32 -right-32 w-[500px] h-[500px] bg-blue-700/20 rounded-full blur-[100px]"></div>
+          <div className="absolute -bottom-32 -left-32 w-[500px] h-[500px] bg-violet-700/15 rounded-full blur-[100px]"></div>
+          <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[800px] h-[400px] bg-blue-900/10 rounded-full blur-[80px]"></div>
+        </div>
+
+        <div className="relative w-full max-w-[400px]">
+
+          {/* Logo + Brand */}
+          <div className="text-center mb-8">
+            <div className="inline-flex items-center justify-center w-14 h-14 bg-gradient-to-br from-blue-500 to-violet-600 rounded-2xl shadow-2xl shadow-blue-500/30 mb-5 ring-1 ring-white/10">
+              <span className="text-2xl">🛒</span>
+            </div>
+            <h1 className="text-[22px] font-bold text-white tracking-tight leading-tight">Shopping AI Assistant</h1>
+            <p className="text-gray-500 text-sm mt-1.5">Your intelligent shopping companion</p>
+          </div>
+
+          {/* Feature pills */}
+          <div className="flex flex-wrap justify-center gap-2 mb-7">
+            {[
+              { icon: '🥗', label: 'Meal plans' },
+              { icon: '📸', label: 'Image analysis' },
+              { icon: '💰', label: 'Budget optimizer' },
+              { icon: '🏪', label: 'Multi-store' },
+            ].map(f => (
+              <span key={f.label} className="inline-flex items-center gap-1.5 px-3 py-1 bg-white/[0.04] border border-white/[0.08] rounded-full text-[11px] text-gray-400 backdrop-blur-sm">
+                <span>{f.icon}</span>{f.label}
+              </span>
+            ))}
+          </div>
+
+          {/* Card */}
+          <div className="bg-white/[0.04] backdrop-blur-xl rounded-2xl border border-white/[0.08] shadow-2xl p-7 space-y-4">
+
+            <div className="space-y-3">
+              {/* Email */}
+              <div>
+                <label className="block text-[11px] font-semibold text-gray-500 uppercase tracking-wider mb-1.5 ml-0.5">Email</label>
+                <input
+                  type="email"
+                  value={bringoUsername}
+                  onChange={(e) => setBringoUsername(e.target.value)}
+                  placeholder="name@example.com"
+                  className="w-full bg-white/[0.05] border border-white/[0.08] text-sm px-4 py-3 rounded-xl text-white focus:border-blue-500/70 focus:ring-2 focus:ring-blue-500/15 outline-none transition-all placeholder-gray-600"
+                />
+              </div>
+              {/* Password */}
+              <div>
+                <label className="block text-[11px] font-semibold text-gray-500 uppercase tracking-wider mb-1.5 ml-0.5">Password</label>
+                <div className="relative">
+                  <input
+                    type={showPassword ? "text" : "password"}
+                    value={bringoPassword}
+                    onChange={(e) => setBringoPassword(e.target.value)}
+                    placeholder="••••••••"
+                    onKeyDown={(e) => e.key === 'Enter' && handleBringoLogin()}
+                    className="w-full bg-white/[0.05] border border-white/[0.08] text-sm px-4 py-3 pr-11 rounded-xl text-white focus:border-blue-500/70 focus:ring-2 focus:ring-blue-500/15 outline-none transition-all placeholder-gray-600"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setShowPassword(!showPassword)}
+                    className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-600 hover:text-gray-300 transition-colors p-1"
+                    aria-label={showPassword ? "Hide password" : "Show password"}
+                  >
+                    {showPassword ? (
+                      <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M13.875 18.825A10.05 10.05 0 0112 19c-4.478 0-8.268-2.943-9.543-7a9.97 9.97 0 011.563-3.029m5.858.908a3 3 0 114.243 4.243M9.878 9.878l4.242 4.242M9.88 9.88l-3.29-3.29m7.532 7.532l3.29 3.29M3 3l3.59 3.59m0 0A9.953 9.953 0 0112 5c4.478 0 8.268 2.943 9.543 7a10.025 10.025 0 01-4.132 5.411m0 0L21 21" /></svg>
+                    ) : (
+                      <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" /><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" /></svg>
+                    )}
+                  </button>
+                </div>
+              </div>
+            </div>
+
+            {bringoAuthMsg && (
+              <div className={`px-4 py-2.5 rounded-xl text-xs flex items-center gap-2 ${
+                bringoAuthStatus === 'authenticated' ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20' :
+                bringoAuthStatus === 'error' ? 'bg-red-500/10 text-red-400 border border-red-500/20' :
+                'bg-blue-500/10 text-blue-400 border border-blue-500/20'
+              }`}>
+                <div className={`w-1.5 h-1.5 rounded-full flex-shrink-0 ${
+                  bringoAuthStatus === 'authenticated' ? 'bg-emerald-400' :
+                  bringoAuthStatus === 'error' ? 'bg-red-400' : 'bg-blue-400 animate-pulse'
+                }`}></div>
+                {bringoAuthMsg}
+              </div>
+            )}
+
+            <button
+              onClick={handleBringoLogin}
+              disabled={bringoAuthStatus === 'loading'}
+              className="w-full bg-gradient-to-r from-blue-600 to-blue-500 hover:from-blue-500 hover:to-violet-500 text-white font-semibold text-sm py-3 rounded-xl transition-all shadow-lg shadow-blue-500/20 disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2 mt-1"
+            >
+              {bringoAuthStatus === 'loading' ? (
+                <>
+                  <svg className="animate-spin w-4 h-4" fill="none" viewBox="0 0 24 24"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"></path></svg>
+                  Signing in...
+                </>
+              ) : 'Sign In'}
+            </button>
+
+            <div className="relative py-1">
+              <div className="absolute inset-0 flex items-center"><div className="w-full border-t border-white/[0.06]"></div></div>
+              <div className="relative flex justify-center"><span className="px-3 bg-transparent text-[10px] text-gray-600 uppercase tracking-widest">or</span></div>
+            </div>
+
+            <button
+              onClick={() => setCurrentPage('chat')}
+              className="w-full bg-white/[0.04] hover:bg-white/[0.08] border border-white/[0.08] hover:border-white/[0.14] text-gray-400 hover:text-white text-sm font-medium py-3 rounded-xl transition-all"
+            >
+              Continue as guest
+            </button>
+          </div>
+
+          {/* Footer status */}
+          <div className="mt-5 flex items-center justify-center gap-2 text-[10px] text-gray-700">
+            <svg className="w-3 h-3 text-emerald-600" fill="currentColor" viewBox="0 0 20 20"><path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd" /></svg>
+            <span>Gemini AI {apiKey ? 'ready' : 'loading...'} &middot; Powered by Google Cloud</span>
+          </div>
+
+        </div>
+      </div>
+    );
+  }
+
+  // =====================================================================
+  // CHAT PAGE - Google-style 3-column layout
+  // =====================================================================
+  return (
+    <div className="flex h-screen bg-[#f8f9fa] text-gray-900 overflow-hidden font-sans">
+
+      {/* LEFT PANEL - Chat */}
+      <aside className="w-[420px] flex-shrink-0 flex flex-col bg-white border-r border-gray-200 shadow-sm">
+
+        {/* Header Bar */}
+        <div className="h-14 flex items-center px-4 border-b border-gray-100 bg-white gap-2">
+          <div className="w-8 h-8 bg-blue-600 rounded-lg flex items-center justify-center text-sm shadow-sm">
+            👨‍🍳
+          </div>
+          <div className="flex-1 min-w-0">
+            <h1 className="text-sm font-semibold text-gray-900 tracking-tight">Shopping <span className="text-blue-600">AI Assistant</span></h1>
+            {/* Store Selector */}
+            <select
+              value={selectedStore}
+              onChange={(e) => setSelectedStore(e.target.value)}
+              className="mt-0.5 text-[10px] text-gray-600 bg-transparent border-none outline-none cursor-pointer hover:text-blue-600"
+            >
+              <option value="carrefour_park_lake">🏬 Carrefour Park Lake</option>
+              <option value="carrefour_mega_mall">🏬 Carrefour Mega Mall</option>
+              <option value="carrefour_plaza_romania">🏬 Carrefour Plaza Romania</option>
+              <option value="carrefour_baneasa">🏬 Carrefour Baneasa</option>
+              <option value="auchan_titan">🏬 Auchan Titan</option>
+              <option value="auchan_militari">🏬 Auchan Militari</option>
+              <option value="mega_image">🏬 Mega Image</option>
+            </select>
+          </div>
+          <Visualizer state={agentState} />
+          {bringoAuthStatus === 'authenticated' ? (
+            <div className="flex items-center gap-1.5 pl-2 ml-auto border-l border-gray-100">
+              <button
+                onClick={logout}
+                className="flex items-center gap-1.5 px-2 py-1 rounded-full bg-gray-50 border border-gray-200 hover:bg-red-50 hover:border-red-100 transition-colors group"
+                title="Sign out / Switch Account"
+              >
+                <div className="w-1.5 h-1.5 rounded-full bg-green-500 group-hover:bg-red-500 transition-colors"></div>
+                <span className="text-[9px] text-gray-600 font-medium group-hover:text-red-700">Sign out</span>
+              </button>
+            </div>
+          ) : (
+            <div className="ml-auto">
+              <button
+                onClick={() => setCurrentPage('login')}
+                className="text-[9px] text-blue-600 font-bold hover:underline"
+              >
+                SIGN IN
+              </button>
+            </div>
+          )}
+        </div>
+
+        {/* Chat Messages */}
+        <div className="flex-1 overflow-y-auto px-4 py-3 space-y-3 bg-[#f8f9fa]">
+          {/* Microphone disabled warning */}
+          {!isMicEnabled && agentState !== AgentState.DISCONNECTED && (
+            <div className="mx-auto max-w-md mt-4">
+              <div className="bg-amber-50 border border-amber-200 rounded-2xl p-4 flex items-start gap-3">
+                <svg className="w-5 h-5 text-amber-600 flex-shrink-0 mt-0.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+                </svg>
+                <div className="flex-1">
+                  <p className="text-sm font-semibold text-amber-900">Microphone is off</p>
+                  <p className="text-xs text-amber-700 mt-1">Press the microphone button to enable voice chat</p>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* Image preview */}
+          {uploadedImagePreview && (
+            <div className="mx-auto max-w-xs mt-2 relative group">
+              <img src={uploadedImagePreview} alt="Uploaded" className="w-full rounded-xl border border-purple-200 shadow-sm" />
+              <button
+                onClick={() => setUploadedImagePreview(null)}
+                className="absolute top-1 right-1 w-5 h-5 rounded-full bg-black/50 text-white flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity"
+              >
+                <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg>
+              </button>
+            </div>
+          )}
+
+          {chatHistory.length === 0 && agentState !== AgentState.DISCONNECTED && (
+            <div className="text-center text-gray-400 mt-20">
+              <div className="w-12 h-12 mx-auto mb-3 rounded-full bg-blue-50 flex items-center justify-center">
+                <svg className="w-6 h-6 text-blue-500" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z" /></svg>
+              </div>
+              <p className="text-sm font-medium text-gray-500">Speak or type a message</p>
+              {isMicEnabled && (
+                <p className="text-xs text-green-600 mt-2 flex items-center justify-center gap-1">
+                  <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 24 24">
+                    <path d="M12 14c1.66 0 3-1.34 3-3V5c0-1.66-1.34-3-3-3S9 3.34 9 5v6c0 1.66 1.34 3 3 3z" />
+                    <path d="M17 11c0 2.76-2.24 5-5 5s-5-2.24-5-5H5c0 3.53 2.61 6.43 6 6.92V21h2v-3.08c3.39-.49 6-3.39 6-6.92h-2z" />
+                  </svg>
+                  Microphone active - speak freely!
+                </p>
+              )}
+            </div>
+          )}
+          {chatHistory.map((msg, idx) => (
+            <ChatMessage key={idx} role={msg.role} text={msg.text} timestamp={msg.timestamp} />
+          ))}
+          <div ref={chatEndRef} />
+        </div>
+
+        {/* Suggestions (when no chat history and connected) */}
+        {chatHistory.length === 0 && agentState !== AgentState.DISCONNECTED && (
+          <div className="px-4 pb-2 flex flex-wrap gap-2">
+            {SUGGESTIONS.map((s) => (
+              <button
+                key={s}
+                onClick={() => sendSuggestion(s)}
+                className="px-3 py-1.5 rounded-full bg-white border border-gray-200 text-xs text-gray-600 hover:bg-blue-50 hover:border-blue-300 hover:text-blue-700 transition-all shadow-sm"
+              >
+                {s}
+              </button>
+            ))}
+          </div>
+        )}
+
+        {/* Input Area */}
+        <div className="p-3 bg-white border-t border-gray-100">
+          <div className="flex items-center gap-2">
+            {agentState === AgentState.DISCONNECTED ? (
+              <button
+                onClick={connect}
+                className="flex-1 bg-blue-600 hover:bg-blue-700 text-white text-sm font-medium py-2.5 rounded-xl transition-all shadow-sm flex items-center justify-center gap-2"
+              >
+                <div className="w-2 h-2 rounded-full bg-white animate-pulse"></div>
+                Connect
+              </button>
+            ) : (
+              <div className="flex-1 space-y-2">
+                <form onSubmit={handleTextSubmit} className="relative flex items-center gap-2">
+                  {/* Image Upload Button */}
+                  <input
+                    ref={imageInputRef}
+                    type="file"
+                    accept="image/*"
+                    className="hidden"
+                    onChange={handleImageUpload}
+                  />
+                  <button
+                    type="button"
+                    onClick={() => imageInputRef.current?.click()}
+                    className="w-9 h-9 rounded-full flex items-center justify-center bg-gray-100 border border-gray-200 hover:bg-purple-50 hover:border-purple-300 text-gray-500 hover:text-purple-600 transition-all flex-shrink-0"
+                    title="Send an image"
+                  >
+                    <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
+                    </svg>
+                  </button>
+
+                  <div className="relative flex-1">
+                    <input
+                      type="text"
+                      value={textInput}
+                      onChange={(e) => setTextInput(e.target.value)}
+                      placeholder="Type a message or send an image..."
+                      className="w-full bg-[#f1f3f4] text-sm p-3 pr-20 rounded-full text-gray-800 focus:bg-white focus:ring-2 focus:ring-blue-500/20 focus:border-blue-300 border border-transparent outline-none placeholder-gray-400 transition-all"
+                    />
+                    <div className="absolute right-2 top-1/2 -translate-y-1/2 flex items-center gap-1">
+                      {/* Sound Toggle */}
+                      <button
+                        type="button"
+                        onClick={() => setIsSoundEnabled(!isSoundEnabled)}
+                        className={`w-8 h-8 rounded-full flex items-center justify-center transition-all ${isSoundEnabled ? 'bg-blue-500 text-white shadow-sm' : 'bg-gray-200 text-gray-400 hover:bg-gray-300'}`}
+                        title={isSoundEnabled ? "Sound on (click to mute)" : "Sound off (click to enable)"}
+                      >
+                        {isSoundEnabled ? (
+                          <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 24 24"><path d="M3 9v6h4l5 5V4L7 9H3zm13.5 3c0-1.77-1.02-3.29-2.5-4.03v8.05c1.48-.73 2.5-2.25 2.5-4.02zM14 3.23v2.06c2.89.86 5 3.54 5 6.71s-2.11 5.85-5 6.71v2.06c4.01-.91 7-4.49 7-8.77s-2.99-7.86-7-8.77z"/></svg>
+                        ) : (
+                          <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 24 24"><path d="M16.5 12c0-1.77-1.02-3.29-2.5-4.03v2.21l2.45 2.45c.03-.2.05-.41.05-.63zm2.5 0c0 .94-.2 1.82-.54 2.64l1.51 1.51C20.63 14.91 21 13.5 21 12c0-4.28-2.99-7.86-7-8.77v2.06c2.89.86 5 3.54 5 6.71zM4.27 3L3 4.27 7.73 9H3v6h4l5 5v-6.73l4.25 4.25c-.67.52-1.42.93-2.25 1.18v2.06c1.38-.31 2.63-.95 3.69-1.81L19.73 21 21 19.73l-9-9L4.27 3zM12 4L9.91 6.09 12 8.18V4z"/></svg>
+                        )}
+                      </button>
+                      {/* Integrated Microphone Toggle */}
+                      <button
+                        type="button"
+                        onClick={() => setIsMicEnabled(!isMicEnabled)}
+                        className={`w-8 h-8 rounded-full flex items-center justify-center transition-all ${isMicEnabled
+                          ? 'bg-red-500 text-white shadow-lg scale-110'
+                          : 'bg-gray-200 text-gray-500 hover:bg-gray-300'
+                          } `}
+                        title={isMicEnabled ? "Microphone On" : "Microphone Off"}
+                      >
+                        {isMicEnabled ? (
+                          <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 24 24">
+                            <path d="M12 14c1.66 0 3-1.34 3-3V5c0-1.66-1.34-3-3-3S9 3.34 9 5v6c0 1.66 1.34 3 3 3z" />
+                            <path d="M17 11c0 2.76-2.24 5-5 5s-5-2.24-5-5H5c0 3.53 2.61 6.43 6 6.92V21h2v-3.08c3.39-.49 6-3.39 6-6.92h-2z" />
+                          </svg>
+                        ) : (
+                          <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 24 24">
+                            <path d="M19 11h-1.7c0 .74-.16 1.43-.43 2.05l1.23 1.23c.56-.98.9-2.09.9-3.28zm-4.02.17c0-.06.02-.11.02-.17V5c0-1.66-1.34-3-3-3S9 3.34 9 5v.18l5.98 5.99zM4.27 3L3 4.27l6.01 6.01V11c0 1.66 1.33 3 2.99 3 .22 0 .44-.03.65-.08l1.66 1.66c-.71.33-1.5.52-2.31.52-2.76 0-5.3-2.1-5.3-5.1H5c0 3.41 2.72 6.23 6 6.72V21h2v-3.28c.91-.13 1.77-.45 2.54-.9L19.73 21 21 19.73 4.27 3z" />
+                          </svg>
+                        )}
+                      </button>
+
+                      {/* Send Button */}
+                      <button type="submit" className="w-8 h-8 rounded-full bg-blue-600 hover:bg-blue-700 flex items-center justify-center transition-colors">
+                        <svg className="w-4 h-4 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M5 12h14M12 5l7 7-7 7" /></svg>
+                      </button>
+                    </div>
+                  </div>
+                </form>
+
+                {/* Status indicator / Disconnect */}
+                <div className="flex items-center justify-between px-2">
+                  <div className="flex items-center gap-2">
+                    {/* Microphone status */}
+                    <div className={`w-1.5 h-1.5 rounded-full ${isMicEnabled ? 'bg-red-500 animate-pulse' : 'bg-gray-400'}`}></div>
+                    <span className="text-[10px] text-gray-500 uppercase tracking-widest font-semibold">
+                      {isMicEnabled ? 'Live Audio' : 'Text Only'}
+                    </span>
+
+                    {/* Agent state indicator */}
+                    {agentState === AgentState.SPEAKING && (
+                      <div className="flex items-center gap-1 ml-2 px-2 py-0.5 bg-blue-50 rounded-full">
+                        <div className="w-1 h-1 rounded-full bg-blue-500 animate-pulse"></div>
+                        <span className="text-[9px] text-blue-600 font-semibold">Speaking</span>
+                      </div>
+                    )}
+                    {agentState === AgentState.THINKING && (
+                      <div className="flex items-center gap-1 ml-2 px-2 py-0.5 bg-amber-50 rounded-full">
+                        <div className="w-1 h-1 rounded-full bg-amber-500 animate-pulse"></div>
+                        <span className="text-[9px] text-amber-600 font-semibold">Processing</span>
+                      </div>
+                    )}
+                  </div>
+                  <button
+                    onClick={disconnect}
+                    className="text-[10px] text-gray-400 hover:text-red-500 flex items-center gap-1 transition-colors"
+                  >
+                    <span>End session</span>
+                    <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg>
+                  </button>
+                </div>
+              </div>
+            )}
+
+            {/* Unified Microfon for Activation (when disconnected) */}
+            {agentState === AgentState.DISCONNECTED && (
+              <button
+                onClick={() => { connect(); setIsMicEnabled(true); }}
+                className="p-2.5 rounded-xl bg-gray-100 border border-gray-300 text-gray-500 hover:bg-blue-50 hover:text-blue-600 transition-all group"
+                title="Connect with Voice"
+              >
+                <svg className="w-5 h-5 group-hover:scale-110 transition-transform" fill="currentColor" viewBox="0 0 24 24">
+                  <path d="M12 14c1.66 0 3-1.34 3-3V5c0-1.66-1.34-3-3-3S9 3.34 9 5v6c0 1.66 1.34 3 3 3z" />
+                  <path d="M17 11c0 2.76-2.24 5-5 5s-5-2.24-5-5H5c0 3.53 2.61 6.43 6 6.92V21h2v-3.08c3.39-.49 6-3.39 6-6.92h-2z" />
+                </svg>
+              </button>
+            )}
+          </div>
+        </div>
+      </aside>
+
+      {/* CENTER - Products Canvas */}
+      <main className="flex-1 relative flex flex-col min-h-screen overflow-hidden">
+
+        {/* Content Area */}
+        <div className="flex-1 overflow-y-auto p-6 lg:p-8">
+
+          {/* ZERO STATE: Hero */}
+          {products.length === 0 && !errorMsg && (
+            <div className="h-full flex flex-col items-center justify-center text-center pb-20">
+              <div className="w-16 h-16 mb-6 rounded-full bg-blue-100 flex items-center justify-center">
+                <svg className="w-8 h-8 text-blue-600" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" /></svg>
+              </div>
+              <h2 className="text-3xl font-bold tracking-tight text-gray-900 mb-3">
+                How can I help you<br />
+                <span className="text-blue-600">today?</span>
+              </h2>
+              <p className="text-gray-500 text-base mb-8 max-w-md">
+                Recipe recommendations, product search, image analysis with ingredients.
+              </p>
+              <div className="flex flex-wrap justify-center gap-2 max-w-lg">
+                {SUGGESTIONS.map((s) => (
+                  <button
+                    key={s}
+                    onClick={() => sendSuggestion(s)}
+                    className="px-4 py-2 rounded-full bg-white border border-gray-200 text-sm text-gray-600 hover:bg-blue-50 hover:border-blue-300 hover:text-blue-700 transition-all shadow-sm hover:shadow"
+                  >
+                    {s}
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* RESULTS GRID */}
+          {products.length > 0 && (
+            <div className="animate-fade-in pb-16">
+              <div className="flex items-center justify-between mb-6">
+                <div>
+                  <h3 className="text-xl font-bold text-gray-900">
+                    {isSubstitutionMode ? "Smart Substitutions" : "Results"}
+                  </h3>
+                  <p className="text-gray-500 text-sm mt-0.5">{products.length} products</p>
+                </div>
+                <button onClick={() => setProducts([])} className="text-xs text-gray-400 hover:text-gray-600 underline transition-colors">
+                  Clear
+                </button>
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4 auto-rows-fr">
+                {products.map((p) => {
+                  const cartItem = cartItems.find(item => item.product_id === p.product_id);
+                  const cartQuantity = cartItem?.quantity || 0;
+
+                  return (
+                    <ProductCard
+                      key={p.product_id}
+                      product={p}
+                      isSubstitution={isSubstitutionMode}
+                      onAddToCart={handleAddToCart}
+                      cartQuantity={cartQuantity}
+                      onIncrementQuantity={(productId, productName) => handleUpdateQuantity(productId, productName, cartQuantity + 1)}
+                      onDecrementQuantity={(productId, productName) => handleUpdateQuantity(productId, productName, cartQuantity - 1)}
+                      onRemoveFromCart={handleRemoveFromCart}
+                    />
+                  );
+                })}
+              </div>
+            </div>
+          )}
+
+          {/* ERROR */}
+          {errorMsg && products.length === 0 && (
+            <div className="flex items-center justify-center h-full">
+              <div className="text-center bg-red-50 border border-red-200 text-red-700 p-6 rounded-2xl max-w-md">
+                <p className="text-lg font-semibold mb-2">Error</p>
+                <p className="text-sm">{errorMsg}</p>
+                <button onClick={() => setErrorMsg(null)} className="mt-4 text-sm text-red-500 hover:text-red-700 underline">Close</button>
+              </div>
+            </div>
+          )}
+        </div>
+
+        {/* COLLAPSIBLE LOGS */}
+        <div className={`${logsExpanded ? 'h-36' : 'h-7'} bg-gray-900 flex flex-col shrink-0 relative z-30 transition-all duration-200`}>
+          <div
+            className="h-7 bg-gray-800 flex items-center px-3 gap-2 cursor-pointer hover:bg-gray-700 transition-colors"
+            onClick={() => setLogsExpanded(!logsExpanded)}
+          >
+            <span className="text-[10px] text-gray-400 font-mono uppercase tracking-widest">Logs</span>
+            <span className="text-[10px] text-gray-500">{logs.length}</span>
+            <span className="ml-auto text-[10px] text-gray-500">{logsExpanded ? '▼' : '▶'}</span>
+          </div>
+          {logsExpanded && (
+            <div className="flex-1 overflow-y-auto p-2 font-mono text-[10px] space-y-0.5">
+              {logs.slice(-20).map((log, idx) => (
+                <div key={idx} className="break-words flex gap-2">
+                  <span className="text-gray-600 w-14 shrink-0 text-right">{log.timestamp}</span>
+                  <span className={`w-10 shrink-0 font-bold ${log.sender === 'user' ? 'text-green-400' : log.sender === 'agent' ? 'text-blue-400' : 'text-purple-400'}`}>
+                    {log.sender.toUpperCase()}
+                  </span>
+                  <span className="text-gray-400 truncate">{log.text}</span>
+                </div>
+              ))}
+              <div ref={logsEndRef} />
+            </div>
+          )}
+        </div>
+      </main>
+
+      {/* RIGHT PANEL - Cart */}
+      {cartOpen && (
+        <aside className="w-80 flex-shrink-0 flex flex-col bg-white border-l border-gray-200 shadow-sm">
+
+          {/* Cart Header */}
+          <div className="h-14 flex items-center px-4 border-b border-gray-100 bg-white">
+            <svg className="w-5 h-5 text-gray-600 mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M3 3h2l.4 2M7 13h10l4-8H5.4M7 13L5.4 5M7 13l-2.293 2.293c-.63.63-.184 1.707.707 1.707H17m0 0a2 2 0 100 4 2 2 0 000-4zm-8 2a2 2 0 100 4 2 2 0 000-4z" /></svg>
+            <h2 className="text-sm font-semibold text-gray-900 flex-1">My Cart</h2>
+            <span className="text-xs text-gray-400">{cartItems.length} {cartItems.length === 1 ? 'item' : 'items'}</span>
+            <button onClick={() => setCartOpen(false)} className="ml-2 w-6 h-6 rounded-full hover:bg-gray-100 flex items-center justify-center text-gray-400 hover:text-gray-600 transition-colors">
+              <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg>
+            </button>
+          </div>
+
+          {/* Cart Items */}
+          <div className="flex-1 overflow-y-auto">
+            {cartItems.length === 0 ? (
+              <div className="flex flex-col items-center justify-center h-full text-gray-400 px-6">
+                <svg className="w-12 h-12 text-gray-200 mb-3" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1} d="M3 3h2l.4 2M7 13h10l4-8H5.4M7 13L5.4 5M7 13l-2.293 2.293c-.63.63-.184 1.707.707 1.707H17m0 0a2 2 0 100 4 2 2 0 000-4zm-8 2a2 2 0 100 4 2 2 0 000-4z" /></svg>
+                <p className="text-sm font-medium text-gray-400">Cart is empty</p>
+                <p className="text-xs text-gray-300 mt-1 text-center">Add products from the search results</p>
+              </div>
+            ) : (
+              <div className="divide-y divide-gray-100">
+                {cartItems.map((item) => (
+                  <div key={item.product_id} className="px-4 py-3 flex gap-3 hover:bg-gray-50 transition-colors">
+                    {item.image_url ? (
+                      <img src={item.image_url} alt="" className="w-12 h-12 rounded-lg object-contain bg-gray-50 border border-gray-100 flex-shrink-0" />
+                    ) : (
+                      <div className="w-12 h-12 rounded-lg bg-gray-100 flex items-center justify-center flex-shrink-0">
+                        <svg className="w-5 h-5 text-gray-300" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v10l8 4" /></svg>
+                      </div>
+                    )}
+                    <div className="flex-1 min-w-0">
+                      <p className="text-xs font-medium text-gray-800 line-clamp-2 leading-tight mb-1">{item.product_name}</p>
+                      <div className="flex items-center justify-between">
+                        <div className="flex items-center gap-1.5 bg-gray-100/50 rounded-lg p-0.5 border border-gray-200">
+                          <button
+                            onClick={() => handleUpdateQuantity(item.product_id, item.product_name, item.quantity - 1)}
+                            className="w-5 h-5 flex items-center justify-center rounded-md hover:bg-white hover:shadow-sm text-gray-600 transition-all"
+                          >
+                            <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M20 12H4" /></svg>
+                          </button>
+                          <span className="text-[11px] font-bold text-gray-800 w-4 text-center">{item.quantity}</span>
+                          <button
+                            onClick={() => handleUpdateQuantity(item.product_id, item.product_name, item.quantity + 1)}
+                            className="w-5 h-5 flex items-center justify-center rounded-md hover:bg-white hover:shadow-sm text-gray-600 transition-all"
+                          >
+                            <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M12 4v16m8-8H4" /></svg>
+                          </button>
+                        </div>
+                        {item.price > 0 && (
+                          <span className="text-xs font-semibold text-gray-700">{formatPrice(item.price * item.quantity)} RON</span>
+                        )}
+                      </div>
+                    </div>
+                    <button
+                      onClick={() => handleRemoveFromCart(item.product_id, item.product_name)}
+                      className="w-8 h-8 rounded-lg hover:bg-red-50 flex items-center justify-center text-gray-300 hover:text-red-500 transition-all flex-shrink-0 self-center border border-transparent hover:border-red-100"
+                      title="Remove"
+                    >
+                      <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg>
+                    </button>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+
+          {/* Cart Footer / Total */}
+          {cartItems.length > 0 && (
+            <div className="border-t border-gray-200 p-4 bg-gray-50">
+              <div className="flex items-center justify-between mb-3">
+                <span className="text-sm font-medium text-gray-600">Estimated total</span>
+                <span className="text-lg font-bold text-gray-900">{formatPrice(cartTotal)} <span className="text-xs font-normal text-gray-500">RON</span></span>
+              </div>
+              <button
+                onClick={handleClearCart}
+                className="w-full text-xs text-gray-400 hover:text-red-500 py-1.5 transition-colors"
+              >
+                Clear cart
+              </button>
+            </div>
+          )}
+        </aside>
+      )}
+
+      {/* Cart Toggle (when cart panel is closed) */}
+      {!cartOpen && (
+        <button
+          onClick={() => setCartOpen(true)}
+          className="fixed right-4 top-4 z-50 w-10 h-10 rounded-full bg-blue-600 hover:bg-blue-700 text-white shadow-lg flex items-center justify-center transition-all"
+        >
+          <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M3 3h2l.4 2M7 13h10l4-8H5.4M7 13L5.4 5M7 13l-2.293 2.293c-.63.63-.184 1.707.707 1.707H17m0 0a2 2 0 100 4 2 2 0 000-4zm-8 2a2 2 0 100 4 2 2 0 000-4z" /></svg>
+          {cartItems.length > 0 && (
+            <span className="absolute -top-1 -right-1 w-5 h-5 bg-red-500 text-white text-[9px] font-bold rounded-full flex items-center justify-center">{cartItems.length}</span>
+          )}
+        </button>
+      )}
+
+      {/* Error Toast */}
+      {errorMsg && products.length > 0 && (
+        <div className="fixed bottom-6 right-6 p-4 bg-white border border-red-200 text-red-700 rounded-xl shadow-lg flex items-center gap-3 z-[1000] max-w-sm">
+          <svg className="w-5 h-5 text-red-500 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-2.5L13.732 4c-.77-.833-1.964-.833-2.732 0L4.082 16.5c-.77.833.192 2.5 1.732 2.5z" /></svg>
+          <div className="flex-grow min-w-0">
+            <p className="text-sm">{errorMsg}</p>
+          </div>
+          <button onClick={() => setErrorMsg(null)} className="w-6 h-6 rounded-full hover:bg-red-50 flex items-center justify-center flex-shrink-0">
+            <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg>
+          </button>
+        </div>
+      )}
+    </div>
+  );
+}
+
+export default App;

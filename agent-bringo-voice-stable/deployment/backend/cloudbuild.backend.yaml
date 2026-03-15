@@ -1,0 +1,32 @@
+# Cloud Build Configuration for Backend
+# Optimized with Docker layer caching via Kaniko
+
+steps:
+  # Build with Kaniko for aggressive layer caching
+  - name: 'gcr.io/kaniko-project/executor:latest'
+    args:
+      - --dockerfile=deployment/backend/Dockerfile.optimized
+      - --destination=gcr.io/$PROJECT_ID/bringo-api:$SHORT_SHA
+      - --destination=gcr.io/$PROJECT_ID/bringo-api:latest
+      - --cache=true
+      - --cache-ttl=168h  # Cache for 7 days
+      - --compressed-caching=false  # Faster caching
+      - --snapshot-mode=redo  # Faster snapshotting
+      - --use-new-run=true  # Better layer caching
+      - --context=dir://.
+    timeout: 1200s  # 20 minutes
+
+timeout: 1200s  # 20 minutes total
+
+options:
+  # Use high CPU machine for faster builds
+  machineType: 'E2_HIGHCPU_8'
+
+  # Increase disk size for caching
+  diskSizeGb: 100
+
+  # Use default logging (faster)
+  logging: CLOUD_LOGGING_ONLY
+
+# Tags for organization
+tags: ['bringo', 'backend', 'fastapi']

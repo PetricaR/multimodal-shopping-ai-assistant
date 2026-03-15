@@ -1,0 +1,10 @@
+**/__pycache__
+**/.venv
+**/.env
+**/.git
+**/node_modules
+**/.DS_Store
+**/tmp
+**/logs
+**/.idea
+**/.vscode
