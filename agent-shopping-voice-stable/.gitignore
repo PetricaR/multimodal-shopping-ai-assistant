@@ -72,6 +72,3 @@ htmlcov/
 *.csv
 *.parquet
 *.jsonl
-data/
-!data/__init__.py
-!data/*.py
