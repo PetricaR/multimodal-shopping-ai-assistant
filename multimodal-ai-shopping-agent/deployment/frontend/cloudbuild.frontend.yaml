@@ -14,8 +14,8 @@ steps:
       - --snapshot-mode=redo  # Faster snapshotting
       - --use-new-run=true  # Better layer caching
       - --context=dir://.
-      - --build-arg=VITE_API_URL=https://bringo-api-845266575866.europe-west1.run.app
-      - --build-arg=VITE_API_BASE_URL=https://bringo-api-845266575866.europe-west1.run.app/api/v1
+      - --build-arg=VITE_API_URL=https://shopping-ai-api-uiuh5wz4wq-ew.a.run.app
+      - --build-arg=VITE_API_BASE_URL=https://shopping-ai-api-uiuh5wz4wq-ew.a.run.app/api/v1
     timeout: 900s  # 15 minutes
 
 timeout: 900s  # 15 minutes total

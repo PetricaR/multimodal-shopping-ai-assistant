@@ -22,7 +22,34 @@ export interface BasketItem {
 
 export interface UserProfile {
   id: string;
-  history: string[]; // List of product IDs or names
+  physical?: {
+    age?: number;
+    gender?: 'male' | 'female' | 'other';
+    weight?: number;
+    height?: number;
+  };
+  dietary?: {
+    primary_diet?: string[];
+    allergies?: string[];
+    exclusions?: string[];
+    calorie_target?: number;
+    nutritional_goals?: string[];
+  };
+  preferences?: {
+    meal_types?: string[];
+    cooking_methods?: string[];
+    complexity?: 'novice' | 'basic' | 'intermediate' | 'advanced';
+    family_members?: { adults: number; children: number };
+    leftovers?: boolean;
+    cooking_frequency?: string;
+    shopping_frequency?: string;
+    variety_per_week?: 'low' | 'medium' | 'high';
+    favorite_foods?: { breakfast?: string[]; lunch?: string[]; dinner?: string[] };
+  };
+  finance?: {
+    monthly_budget?: { min: number; max: number; currency: string };
+  };
+  history: string[];
 }
 
 export enum AgentState {

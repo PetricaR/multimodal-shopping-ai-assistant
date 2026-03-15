@@ -237,21 +237,67 @@ export const searchProducts = async (query: string | string[], multiStore: boole
 };
 
 /**
- * Get ingredients for a recipe as a shopping list
+ * Get ingredients for a recipe using Gemini AI directly (no backend scraper needed).
+ * Falls back to backend if no API key is available.
  */
-export const getRecipeIngredients = async (foodName: string): Promise<any> => {
+export const getRecipeIngredients = async (foodName: string, apiKey?: string): Promise<any> => {
+    const resolvedKey = apiKey || (env && env.VITE_GOOGLE_API_KEY);
+
+    if (resolvedKey) {
+        log(`[GEMINI] Fetching recipe for "${foodName}" via Gemini AI`);
+        try {
+            const { GoogleGenAI } = await import('@google/genai');
+            const ai = new GoogleGenAI({ apiKey: resolvedKey });
+
+            const prompt = `You are a culinary expert. Provide a detailed recipe for "${foodName}".
+Return ONLY a valid JSON object (no markdown, no extra text) with this exact structure:
+{
+  "recipe_name": "Full recipe name",
+  "servings": "4 servings",
+  "ingredients": ["200g flour", "3 eggs", "..."],
+  "ingredient_groups": {
+    "Main": ["200g flour", "3 eggs"],
+    "Sauce": ["2 tbsp olive oil"]
+  },
+  "shopping_list": "- 200g flour\\n- 3 eggs\\n..."
+}`;
+
+            const response = await ai.models.generateContent({
+                model: 'gemini-2.0-flash',
+                contents: [{ role: 'user', parts: [{ text: prompt }] }],
+                config: { responseMimeType: 'application/json' }
+            });
+
+            const text = response.text ?? '';
+            const jsonMatch = text.match(/\{[\s\S]*\}/);
+            if (jsonMatch) {
+                const data = JSON.parse(jsonMatch[0]);
+                log(`[GEMINI] Recipe fetched: ${data.recipe_name}, ${data.ingredients?.length} ingredients`);
+                return {
+                    status: 'success',
+                    recipe_name: data.recipe_name || foodName,
+                    servings: data.servings || '4 servings',
+                    ingredients: data.ingredients || [],
+                    ingredient_groups: data.ingredient_groups || {},
+                    shopping_list: data.shopping_list || (data.ingredients || []).map((i: string) => `- ${i}`).join('\n'),
+                };
+            }
+            throw new Error('Could not parse Gemini JSON response');
+        } catch (error) {
+            log(`[WARN] Gemini recipe fetch failed, falling back to backend:`, error);
+        }
+    }
+
+    // Fallback: backend scraper
     const url = `${API_HOST}/api/v1/recipes/ingredients`;
     const payload = { food_name: foodName };
-
     log(`[REQUEST] POST ${url}`, payload);
-
     try {
         const response = await fetchWithTimeout(url, {
             method: 'POST',
             headers: HEADERS,
             body: JSON.stringify(payload)
         });
-
         if (!response.ok) throw new Error(`HTTP ${response.status}`);
         const data = await response.json();
         log(`[RESPONSE] Recipe ingredients:`, data);

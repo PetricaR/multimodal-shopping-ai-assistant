@@ -4,8 +4,8 @@
 //
 // KEY UPDATES FROM LATEST DOCUMENTATION:
 //
-// 1. MODEL: gemini-2.5-flash-native-audio-preview-12-2025 (Latest Preview)
-//    - Latest preview model with enhanced voice quality and affective dialog
+// 1. MODEL: gemini-live-2.5-flash-native-audio (Stable GA - March 2026)
+//    - Stable GA model replacing the December 2025 preview
 //    - Improved Romanian language support
 //    - Better function calling with native audio
 //
@@ -42,9 +42,18 @@ import {
   getSystemConfig
 } from './services/api';
 import { AudioUtils, PCMStreamPlayer } from './services/audio';
-import { ProductCard } from './components/ProductCard';
 import { Visualizer } from './components/Visualizer';
 import { ChatMessage } from './components/ChatMessage';
+import { ProfileSettings } from './components/ProfileSettings';
+import { ProductResultsBlock } from './components/ProductResultsBlock';
+
+// =====================================================================
+// HELPERS
+// =====================================================================
+
+/** Strip model thinking blocks (<thinking>...</thinking>) before displaying */
+const stripThinking = (text: string): string =>
+  text.replace(/<thinking>[\s\S]*?<\/thinking>/gi, '').trim();
 
 // =====================================================================
 // TOOL DEFINITIONS - Following Function Calling Best Practices
@@ -218,98 +227,79 @@ const manageUserProfileTool: FunctionDeclaration = {
 // SYSTEM INSTRUCTION - Optimized for Romanian Voice Interaction
 // =====================================================================
 
-const SYSTEM_INSTRUCTION = `You are Shopping AI Assistant, an AI shopping assistant that helps users find products, recipes, and meal plans. You can analyze images of food, ingredients, or products.
+const SYSTEM_INSTRUCTION = `You are MIA — Multimodal Intelligence Assistant — a next-generation AI shopping companion built on Google Gemini. You are warm, fast, proactive, and smart. You speak naturally like a knowledgeable friend who loves food and smart shopping.
 
-# CORE BEHAVIOR
-LANGUAGE: Always respond in English
-TONE: Professional yet warm, like a helpful personal shopper or nutritionist
-BREVITY: Maximum 2-3 sentences per response
+# PERSONA & VOICE
+- Name: MIA (Multimodal Intelligence Assistant)
+- Personality: Enthusiastic, helpful, concise. Never robotic.
+- Opening (first turn only): "Hi! I'm Mia, your AI shopping assistant. I can hear you, see images, search products, and build your cart in real time. What can I help you with?"
+- Language: English (switch to Romanian if user speaks Romanian)
+- Brevity: 1–2 sentences for simple actions, max 3 for complex ones
+- Never read out long lists — summarize: "Found 8 products — best match is X at Y RON"
 
-# AVAILABLE TOOLS & WHEN TO USE
+# MULTIMODAL SUPERPOWERS
+Vision: When user shares an image → immediately identify ALL food/products visible → suggest a dish or shopping need → call find_shopping_items for missing items
+Voice: You are listening in real time. Respond immediately. Handle interruptions gracefully.
+Context: Remember what was found this session. "The first one" = most recent search result #1.
+
+# TOOLS & WHEN TO USE THEM
 1. find_shopping_items(queries[], multi_store, limit)
-   → USE WHEN: User asks to search/find products
-   → EXAMPLE: "find milk" → call with queries=["milk"]
+   → Any product search request. Always search, never guess products.
+   → Multi-product: queries=["milk","eggs","bread"] in ONE call
 
 2. add_to_cart(product_id, quantity, product_name, price)
-   → USE WHEN: User confirms adding (says "yes", "add", "ok", "sure")
-   → CRITICAL: MUST include price from search results
-   → NEVER say "added" without calling this tool first
+   → User says yes/add/ok/sure/that one/the first → CALL THIS IMMEDIATELY
+   → ALWAYS pass price. NEVER say "added" without calling the tool.
 
 3. get_recipe_ingredients(food_name)
-   → USE WHEN: User asks about recipe ingredients
+   → Recipe or "how to make" requests → get ingredients → offer to search them all
 
 4. propose_meal_plan()
-   → USE WHEN: User asks for meal plan suggestions
+   → Weekly or daily meal planning requests
 
-# INTERACTION PATTERN (STRICT)
-User says: "find coffee"
-└─> YOU: Call find_shopping_items(["coffee"])
-└─> YOU: "Found coffee. Would you like the first option (X RON)?"
-└─> User: "yes" / "add it"
-    └─> YOU: Call add_to_cart(id, 1, name, price) ← MUST CALL TOOL!
-    └─> YOU: "✓ Added [name] to your cart."
+5. optimize_budget(cache_key, budget)
+   → User mentions a budget ("under 100 RON") → call after search
 
-# IMAGE ANALYSIS
-When the user sends an image, analyze it and:
-1. Identify visible food items, ingredients, or products
-2. Suggest what to cook or buy based on what you see
-3. Offer to search for missing ingredients or complementary products
-4. Always call find_shopping_items after analyzing an image
+6. manage_user_profile(action)
+   → Dietary preferences, allergies, budget setup
 
-# EXAMPLES (Few-Shot Learning)
+# LIVE INTERACTION PATTERNS
 
-Example 1: Simple Search
-User: "find bread"
-Assistant: [calls find_shopping_items(["bread"])]
-Assistant: "Found white bread (5.50 RON) and whole grain bread (6.20 RON). Which do you prefer?"
+Search flow:
+  User: "find eggs" → call find_shopping_items(["eggs"]) → "Got it! Best match: Ouă Ferma Noastră 10-pack at 8.50 RON. Add it?"
+  User: "yes" → call add_to_cart(...) → "✓ Eggs added!"
 
-Example 2: Add to Cart
-User: "the first one"
-Assistant: [calls add_to_cart(product_id="123", quantity=1, product_name="White bread", price=5.50)]
-Assistant: "✓ Added white bread to your cart (5.50 RON)."
+Image flow:
+  User: [photo of fridge] → "I see milk, cheese and leftover chicken. You could make a creamy chicken pasta! Want me to find the missing ingredients?"
+  → call find_shopping_items(["pasta","heavy cream","garlic"])
 
-Example 3: Multi-item Search
-User: "find milk and coffee"
-Assistant: [calls find_shopping_items(["milk", "coffee"])]
-Assistant: "Found milk (12.50 RON) and coffee (35.99 RON). Shall I add both?"
+Recipe flow:
+  User: "how do I make tiramisu?" → call get_recipe_ingredients("tiramisu") → "Tiramisu needs mascarpone, eggs, ladyfingers, espresso, and cocoa. Want me to add them to your cart?"
 
-Example 4: Image Analysis
-User: [sends image of tomatoes, cheese, pasta]
-Assistant: "I see tomatoes, cheese, and pasta. You could make a pasta with tomato sauce! Let me search for the missing ingredients."
-Assistant: [calls find_shopping_items(["tomato sauce", "parmesan", "olive oil"])]
+Multi-item flow:
+  User: "I need ingredients for a salad" → call find_shopping_items(["lettuce","tomatoes","cucumber","olive oil","feta"])
 
-# DECISION TREE
-IF user_input contains ["find", "search", "look for", "I want", "get me"]:
-  └─> CALL find_shopping_items
-  └─> Present top results with price
-  └─> Ask which to add
-
-IF user_input matches ["yes", "add", "ok", "sure", "the first", "that one"]:
-  └─> CALL add_to_cart WITH price parameter
-  └─> Confirm addition
-  └─> Ask "Anything else?"
-
-IF user_input contains ["recipe", "ingredients", "how to make"]:
-  └─> CALL get_recipe_ingredients
-  └─> Present ingredients
-  └─> Offer to search for them
+# GROUNDING & ACCURACY
+- Product info comes from live catalog search — always call find_shopping_items, never invent products or prices
+- Recipe ingredients come from get_recipe_ingredients — powered by Gemini AI with real recipes
+- For nutrition questions, seasonal tips, or cooking advice you can answer directly from your knowledge
 
 # CRITICAL RULES
-1. ALWAYS use tools (don't fake responses)
-2. ALWAYS include price in add_to_cart
-3. NEVER say "added" without calling add_to_cart tool
-4. Format prices: XX.XX RON
-5. Confirm user intent before adding
-6. Always respond in English
+1. ALWAYS call tools — never fake product names, prices, or cart actions
+2. ALWAYS pass price to add_to_cart (get it from search results)
+3. After adding to cart → confirm briefly → ask "Anything else?"
+4. On image → analyze first, then immediately search
+5. Be proactive: after a recipe, offer to search all ingredients at once
+6. Handle "the first/second/cheapest/that one" by referencing the last search result
 `;
 
 const SUGGESTIONS = [
-  "What should I cook today?",
-  "I have a budget of 100",
-  "Vegetarian recipe",
-  "Daily meal plan",
-  "Search for coffee",
-  "Upload an image with ingredients"
+  "Find eggs and milk",
+  "What can I cook with chicken and rice?",
+  "I have a budget of 150 RON",
+  "Give me a weekly meal plan",
+  "How do I make tiramisu?",
+  "Show me vegetarian products"
 ];
 
 interface ChatMessage {
@@ -334,12 +324,14 @@ const toolsConfig = {
   tools: [
     {
       functionDeclarations: [
-        findShoppingItemsTool, suggestSubstitutionTool, addToCartTool, removeFromCartTool, 
-        updateCartQuantityTool, getRecipeIngredientsTool, optimizeBudgetTool, 
-        optimizeShoppingStrategyTool, proposeMealPlanTool, getMealPlanDetailsTool, 
+        findShoppingItemsTool, suggestSubstitutionTool, addToCartTool, removeFromCartTool,
+        updateCartQuantityTool, getRecipeIngredientsTool, optimizeBudgetTool,
+        optimizeShoppingStrategyTool, proposeMealPlanTool, getMealPlanDetailsTool,
         manageUserProfileTool
       ]
-    }
+    },
+    // Google Search grounding — enables real-time nutrition info, seasonal tips, cooking advice
+    { googleSearch: {} }
   ],
 };
 
@@ -367,6 +359,7 @@ function App() {
   // Cart state
   const [cartItems, setCartItems] = useState<CartItem[]>([]);
   const [cartOpen, setCartOpen] = useState(true);
+  const [isProfileOpen, setIsProfileOpen] = useState(false);
 
   // Auth state
   const [bringoUsername, setBringoUsername] = useState('');
@@ -404,12 +397,8 @@ function App() {
 
   useEffect(() => {
     const loadConfig = async () => {
-      // Try backend first, fallback to env var baked at build time
-      const envKey = (import.meta as any).env?.VITE_GOOGLE_API_KEY;
-      if (envKey) {
-        setApiKey(envKey);
-        return;
-      }
+      // Always fetch from backend at runtime — key must NOT be baked into the JS bundle
+      // (baked keys get auto-revoked by Google's scanners within minutes)
       const cfg = await getSystemConfig();
       if (cfg?.google_api_key) {
         setApiKey(cfg.google_api_key);
@@ -614,21 +603,22 @@ function App() {
       const ai = new GoogleGenAI({ apiKey: keyToUse });
 
       // =====================================================================
-      // GEMINI 2.5 FLASH NATIVE AUDIO - Preview (December 2025)
+      // GEMINI 2.5 FLASH NATIVE AUDIO LATEST - supports bidiGenerateContent
       // =====================================================================
       const sessionPromise = ai.live.connect({
-        model: 'gemini-2.5-flash-native-audio-preview-12-2025',
+        model: 'gemini-2.5-flash-native-audio-latest',
         config: {
-          responseModalities: isSoundEnabledRef.current ? [Modality.AUDIO] : [Modality.TEXT],
+          // Native audio model ALWAYS requires AUDIO modality
+          responseModalities: [Modality.AUDIO],
           systemInstruction: SYSTEM_INSTRUCTION,
           tools: toolsConfig.tools,
           inputAudioTranscription: {},
-          ...(isSoundEnabledRef.current ? { outputAudioTranscription: {} } : {}),
-          ...(isSoundEnabledRef.current ? {
-            speechConfig: {
-              languageCode: 'en-US',
+          outputAudioTranscription: {},
+          speechConfig: {
+            voiceConfig: {
+              prebuiltVoiceConfig: { voiceName: 'Kore' }
             }
-          } : {}),
+          },
         },
         callbacks: {
           onopen: () => {
@@ -692,7 +682,7 @@ function App() {
 
             // Agent speech transcript (AUDIO modality)
             if (msg.serverContent?.outputTranscription?.text) {
-              const newText = msg.serverContent.outputTranscription.text;
+              const newText = stripThinking(msg.serverContent.outputTranscription.text);
               agentStreamingTextRef.current += newText;
 
               if (currentStreamingRole.current !== 'agent') {
@@ -706,7 +696,7 @@ function App() {
             if (msg.serverContent?.modelTurn?.parts) {
               for (const part of msg.serverContent.modelTurn.parts) {
                 if (part.text) {
-                  agentStreamingTextRef.current += part.text;
+                  agentStreamingTextRef.current += stripThinking(part.text);
                   if (currentStreamingRole.current !== 'agent') {
                     currentStreamingRole.current = 'agent';
                     addChatMessage('agent', agentStreamingTextRef.current);
@@ -764,10 +754,11 @@ function App() {
                 userStreamingTextRef.current = '';
               }
 
-              // Finalize agent message if exists
+              // Finalize agent message — strip any leftover thinking blocks
               if (agentStreamingTextRef.current.trim()) {
-                updateLastChatMessage('agent', agentStreamingTextRef.current.trim());
-                addLog('agent', agentStreamingTextRef.current.trim());
+                const finalText = stripThinking(agentStreamingTextRef.current).trim();
+                updateLastChatMessage('agent', finalText);
+                addLog('agent', finalText);
                 agentStreamingTextRef.current = '';
               }
 
@@ -855,7 +846,7 @@ function App() {
                   }
                   else if (call.name === 'get_recipe_ingredients') {
                     const args = call.args as any;
-                    result = await getRecipeIngredients(args.food_name);
+                    result = await getRecipeIngredients(args.food_name, apiKey);
                   }
                   else if (call.name === 'optimize_budget') {
                     const args = call.args as any;
@@ -1113,7 +1104,7 @@ function App() {
             <div className="w-10 h-10 bg-gradient-to-br from-blue-500 to-violet-600 rounded-xl flex items-center justify-center shadow-lg shadow-blue-500/30 text-xl">
               🛒
             </div>
-            <span className="text-white font-semibold text-[15px] tracking-tight">Shopping AI Assistant</span>
+            <span className="text-white font-semibold text-[15px] tracking-tight">MIA — Multimodal Intelligence Assistant</span>
           </div>
 
           {/* Main headline */}
@@ -1165,7 +1156,7 @@ function App() {
           {/* Mobile logo */}
           <div className="lg:hidden flex items-center gap-2 mb-10">
             <div className="w-9 h-9 bg-gradient-to-br from-blue-500 to-violet-600 rounded-xl flex items-center justify-center shadow-md text-lg">🛒</div>
-            <span className="text-gray-900 font-bold text-[16px]">Shopping AI Assistant</span>
+            <span className="text-gray-900 font-bold text-[16px]">MIA</span>
           </div>
 
           <div className="w-full max-w-[360px]">
@@ -1304,6 +1295,14 @@ function App() {
           <Visualizer state={agentState} />
           {bringoAuthStatus === 'authenticated' ? (
             <div className="flex items-center gap-1.5 pl-2 ml-auto border-l border-gray-100">
+              <button
+                onClick={() => setIsProfileOpen(true)}
+                className="flex items-center gap-1.5 px-2 py-1 rounded-full bg-gray-50 border border-gray-200 hover:bg-blue-50 hover:border-blue-100 transition-colors"
+                title="My Profile"
+              >
+                <span className="text-[10px]">👤</span>
+                <span className="text-[9px] text-gray-600 font-medium">Profile</span>
+              </button>
               <button
                 onClick={logout}
                 className="flex items-center gap-1.5 px-2 py-1 rounded-full bg-gray-50 border border-gray-200 hover:bg-red-50 hover:border-red-100 transition-colors group"
@@ -1562,40 +1561,32 @@ function App() {
             </div>
           )}
 
-          {/* RESULTS GRID */}
+          {/* RESULTS — horizontal scrollable gallery */}
           {products.length > 0 && (
-            <div className="animate-fade-in pb-16">
-              <div className="flex items-center justify-between mb-6">
-                <div>
-                  <h3 className="text-xl font-bold text-gray-900">
-                    {isSubstitutionMode ? "Smart Substitutions" : "Results"}
-                  </h3>
-                  <p className="text-gray-500 text-sm mt-0.5">{products.length} products</p>
-                </div>
+            <div className="animate-fade-in pb-4">
+              <div className="flex items-center justify-between mb-3">
+                <h3 className="text-sm font-semibold text-gray-700">
+                  {isSubstitutionMode ? "Smart Substitutions" : "Search Results"}
+                  <span className="ml-2 text-gray-400 font-normal">{products.length} products</span>
+                </h3>
                 <button onClick={() => setProducts([])} className="text-xs text-gray-400 hover:text-gray-600 underline transition-colors">
                   Clear
                 </button>
               </div>
-
-              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4 auto-rows-fr">
-                {products.map((p) => {
-                  const cartItem = cartItems.find(item => item.product_id === p.product_id);
-                  const cartQuantity = cartItem?.quantity || 0;
-
-                  return (
-                    <ProductCard
-                      key={p.product_id}
-                      product={p}
-                      isSubstitution={isSubstitutionMode}
-                      onAddToCart={handleAddToCart}
-                      cartQuantity={cartQuantity}
-                      onIncrementQuantity={(productId, productName) => handleUpdateQuantity(productId, productName, cartQuantity + 1)}
-                      onDecrementQuantity={(productId, productName) => handleUpdateQuantity(productId, productName, cartQuantity - 1)}
-                      onRemoveFromCart={handleRemoveFromCart}
-                    />
-                  );
-                })}
-              </div>
+              <ProductResultsBlock
+                queryGroups={[{ query: 'products', products }]}
+                isSubstitution={isSubstitutionMode}
+                cartItems={cartItems}
+                onAddToCart={handleAddToCart}
+                onIncrementQuantity={(productId, productName) => {
+                  const item = cartItems.find(i => i.product_id === productId);
+                  handleUpdateQuantity(productId, productName, (item?.quantity || 0) + 1);
+                }}
+                onDecrementQuantity={(productId, productName) => {
+                  const item = cartItems.find(i => i.product_id === productId);
+                  handleUpdateQuantity(productId, productName, (item?.quantity || 1) - 1);
+                }}
+              />
             </div>
           )}
 
@@ -1737,6 +1728,9 @@ function App() {
           )}
         </button>
       )}
+
+      {/* Profile Settings Modal */}
+      <ProfileSettings isOpen={isProfileOpen} onClose={() => setIsProfileOpen(false)} />
 
       {/* Error Toast */}
       {errorMsg && products.length > 0 && (

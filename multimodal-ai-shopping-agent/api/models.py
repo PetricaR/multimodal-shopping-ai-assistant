@@ -348,3 +348,35 @@ class UserProfileUpdate(BaseModel):
     dietary: Optional[DietaryProfile] = None
     preferences: Optional[MealPreferences] = None
     finance: Optional[FinancialProfile] = None
+
+
+class MealItem(BaseModel):
+    name: str
+    description: Optional[str] = None
+    recipe_url: Optional[str] = None
+    image_url: Optional[str] = None
+    prep_time: Optional[str] = None
+
+class DayPlan(BaseModel):
+    day_name: str
+    breakfast: MealItem
+    lunch: MealItem
+    dinner: MealItem
+    snack: MealItem
+
+class WeeklyPlan(BaseModel):
+    title: str
+    days: Dict[str, DayPlan]
+
+class DishDetails(BaseModel):
+    name: str
+    ingredients: List[str]
+    instructions: List[str]
+    cooking_time_minutes: int
+    servings: int
+
+class SpecialEventPlan(BaseModel):
+    event_type: str
+    guest_count: int
+    dishes: List[DishDetails]
+    extras: List[str]
