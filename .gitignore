@@ -214,3 +214,4 @@ node_modules/
 .npm/
 agent-bringo-voice-stable/app/.npm-cache/*
 å
+agent-shopping-voice-stable/app/.env.production
