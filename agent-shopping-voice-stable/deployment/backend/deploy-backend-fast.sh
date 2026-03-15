@@ -1,6 +1,6 @@
 #!/bin/bash
 
-# Optimized Fast Deployment for Bringo Backend API
+# Optimized Fast Deployment for Shopping AI Backend API
 # Uses Cloud Build with Kaniko caching for 5-10x faster builds
 
 set -e
@@ -8,7 +8,7 @@ set -e
 # Configuration
 PROJECT_ID="formare-ai"
 REGION="europe-west1"
-SERVICE_NAME="bringo-api"
+SERVICE_NAME="shopping-ai-api"
 IMAGE_NAME="gcr.io/${PROJECT_ID}/${SERVICE_NAME}:latest"
 
 # Cloud SQL Configuration
