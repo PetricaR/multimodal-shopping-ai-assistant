@@ -13,7 +13,7 @@ class SystemConfig(BaseModel):
     status: str
     version: str = "1.0.0"
 
-@router.get("/api/v1/config", response_model=SystemConfig)
+@router.api_route("/api/v1/config", methods=["GET", "HEAD"], response_model=SystemConfig)
 async def get_config():
     """
     Returns essential system configuration for the frontend.

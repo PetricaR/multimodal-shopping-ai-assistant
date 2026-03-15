@@ -404,6 +404,12 @@ function App() {
 
   useEffect(() => {
     const loadConfig = async () => {
+      // Try backend first, fallback to env var baked at build time
+      const envKey = (import.meta as any).env?.VITE_GOOGLE_API_KEY;
+      if (envKey) {
+        setApiKey(envKey);
+        return;
+      }
       const cfg = await getSystemConfig();
       if (cfg?.google_api_key) {
         setApiKey(cfg.google_api_key);
@@ -1088,57 +1094,102 @@ function App() {
   // =====================================================================
   if (currentPage === 'login') {
     return (
-      <div className="min-h-screen bg-[#080C14] flex items-center justify-center p-4 font-sans relative overflow-hidden">
-        {/* Ambient glow blobs */}
-        <div className="absolute inset-0 pointer-events-none overflow-hidden">
-          <div className="absolute -top-32 -right-32 w-[500px] h-[500px] bg-blue-700/20 rounded-full blur-[100px]"></div>
-          <div className="absolute -bottom-32 -left-32 w-[500px] h-[500px] bg-violet-700/15 rounded-full blur-[100px]"></div>
-          <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[800px] h-[400px] bg-blue-900/10 rounded-full blur-[80px]"></div>
-        </div>
+      <div className="min-h-screen flex font-sans overflow-hidden">
 
-        <div className="relative w-full max-w-[400px]">
-
-          {/* Logo + Brand */}
-          <div className="text-center mb-8">
-            <div className="inline-flex items-center justify-center w-14 h-14 bg-gradient-to-br from-blue-500 to-violet-600 rounded-2xl shadow-2xl shadow-blue-500/30 mb-5 ring-1 ring-white/10">
-              <span className="text-2xl">🛒</span>
+        {/* ── LEFT HERO PANEL ─────────────────────────────────────────── */}
+        <div className="hidden lg:flex flex-col w-[58%] bg-[#050A15] relative overflow-hidden p-14 xl:p-20">
+          {/* Background mesh */}
+          <div className="absolute inset-0 pointer-events-none">
+            <div className="absolute top-0 left-0 w-full h-full bg-[radial-gradient(ellipse_80%_60%_at_20%_-10%,rgba(59,130,246,0.18),transparent)]"></div>
+            <div className="absolute bottom-0 right-0 w-[600px] h-[600px] bg-[radial-gradient(circle,rgba(139,92,246,0.12),transparent_70%)]"></div>
+            <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[900px] h-[500px] bg-blue-950/30 rounded-full blur-[80px]"></div>
+            <div className="absolute inset-0 opacity-[0.03]"
+              style={{backgroundImage:'linear-gradient(rgba(255,255,255,0.5) 1px,transparent 1px),linear-gradient(90deg,rgba(255,255,255,0.5) 1px,transparent 1px)',backgroundSize:'60px 60px'}}>
             </div>
-            <h1 className="text-[22px] font-bold text-white tracking-tight leading-tight">Shopping AI Assistant</h1>
-            <p className="text-gray-500 text-sm mt-1.5">Your intelligent shopping companion</p>
           </div>
 
-          {/* Feature pills */}
-          <div className="flex flex-wrap justify-center gap-2 mb-7">
-            {[
-              { icon: '🥗', label: 'Meal plans' },
-              { icon: '📸', label: 'Image analysis' },
-              { icon: '💰', label: 'Budget optimizer' },
-              { icon: '🏪', label: 'Multi-store' },
-            ].map(f => (
-              <span key={f.label} className="inline-flex items-center gap-1.5 px-3 py-1 bg-white/[0.04] border border-white/[0.08] rounded-full text-[11px] text-gray-400 backdrop-blur-sm">
-                <span>{f.icon}</span>{f.label}
+          {/* Logo */}
+          <div className="relative flex items-center gap-3">
+            <div className="w-10 h-10 bg-gradient-to-br from-blue-500 to-violet-600 rounded-xl flex items-center justify-center shadow-lg shadow-blue-500/30 text-xl">
+              🛒
+            </div>
+            <span className="text-white font-semibold text-[15px] tracking-tight">Shopping AI Assistant</span>
+          </div>
+
+          {/* Main headline */}
+          <div className="relative mt-16 mb-12">
+            <div className="inline-flex items-center gap-2 bg-blue-500/10 border border-blue-500/20 rounded-full px-4 py-1.5 mb-6">
+              <div className="w-1.5 h-1.5 bg-blue-400 rounded-full animate-pulse"></div>
+              <span className="text-blue-300 text-[11px] font-medium tracking-wide uppercase">Powered by Gemini 2.5 Flash</span>
+            </div>
+            <h1 className="text-5xl xl:text-6xl font-bold text-white leading-[1.1] tracking-tight mb-5">
+              The future of<br />
+              <span className="bg-gradient-to-r from-blue-400 via-violet-400 to-blue-300 bg-clip-text text-transparent">
+                smart shopping
               </span>
+            </h1>
+            <p className="text-gray-400 text-lg leading-relaxed max-w-md">
+              Voice-powered AI that identifies ingredients from photos, plans meals, and optimizes your cart — all in real time.
+            </p>
+          </div>
+
+          {/* Feature cards */}
+          <div className="relative grid grid-cols-2 gap-3 mb-12">
+            {[
+              { icon: '🎙️', title: 'Voice & Text', desc: 'Talk or type naturally' },
+              { icon: '📸', title: 'Image Recognition', desc: 'Scan ingredients instantly' },
+              { icon: '🥗', title: 'Meal Planning', desc: 'Personalized recipes' },
+              { icon: '💰', title: 'Budget Optimizer', desc: 'Smart price tracking' },
+            ].map(f => (
+              <div key={f.title} className="bg-white/[0.03] border border-white/[0.07] rounded-2xl p-4 backdrop-blur-sm hover:bg-white/[0.06] transition-colors">
+                <div className="text-2xl mb-2">{f.icon}</div>
+                <div className="text-white text-[13px] font-semibold">{f.title}</div>
+                <div className="text-gray-500 text-[11px] mt-0.5">{f.desc}</div>
+              </div>
             ))}
           </div>
 
-          {/* Card */}
-          <div className="bg-white/[0.04] backdrop-blur-xl rounded-2xl border border-white/[0.08] shadow-2xl p-7 space-y-4">
+          {/* Bottom trust bar */}
+          <div className="relative mt-auto flex items-center gap-6 pt-6 border-t border-white/[0.06]">
+            {['Google Cloud', 'Vertex AI', 'Vector Search'].map(label => (
+              <div key={label} className="flex items-center gap-2">
+                <div className="w-5 h-5 bg-white/10 rounded-md"></div>
+                <span className="text-gray-600 text-[11px]">{label}</span>
+              </div>
+            ))}
+          </div>
+        </div>
 
-            <div className="space-y-3">
-              {/* Email */}
+        {/* ── RIGHT FORM PANEL ────────────────────────────────────────── */}
+        <div className="flex-1 flex flex-col items-center justify-center bg-white px-8 py-12">
+          {/* Mobile logo */}
+          <div className="lg:hidden flex items-center gap-2 mb-10">
+            <div className="w-9 h-9 bg-gradient-to-br from-blue-500 to-violet-600 rounded-xl flex items-center justify-center shadow-md text-lg">🛒</div>
+            <span className="text-gray-900 font-bold text-[16px]">Shopping AI Assistant</span>
+          </div>
+
+          <div className="w-full max-w-[360px]">
+            {/* Heading */}
+            <div className="mb-8">
+              <h2 className="text-2xl font-bold text-gray-900 tracking-tight">Welcome back</h2>
+              <p className="text-gray-500 text-sm mt-1">Sign in to access your personalized assistant</p>
+            </div>
+
+            {/* Form */}
+            <div className="space-y-4">
               <div>
-                <label className="block text-[11px] font-semibold text-gray-500 uppercase tracking-wider mb-1.5 ml-0.5">Email</label>
+                <label className="block text-xs font-semibold text-gray-600 uppercase tracking-wider mb-1.5">Email</label>
                 <input
                   type="email"
                   value={bringoUsername}
                   onChange={(e) => setBringoUsername(e.target.value)}
                   placeholder="name@example.com"
-                  className="w-full bg-white/[0.05] border border-white/[0.08] text-sm px-4 py-3 rounded-xl text-white focus:border-blue-500/70 focus:ring-2 focus:ring-blue-500/15 outline-none transition-all placeholder-gray-600"
+                  className="w-full bg-gray-50 border border-gray-200 text-sm px-4 py-3 rounded-xl text-gray-900 focus:border-blue-500 focus:ring-2 focus:ring-blue-500/15 outline-none transition-all placeholder-gray-400"
                 />
               </div>
-              {/* Password */}
+
               <div>
-                <label className="block text-[11px] font-semibold text-gray-500 uppercase tracking-wider mb-1.5 ml-0.5">Password</label>
+                <label className="block text-xs font-semibold text-gray-600 uppercase tracking-wider mb-1.5">Password</label>
                 <div className="relative">
                   <input
                     type={showPassword ? "text" : "password"}
@@ -1146,12 +1197,12 @@ function App() {
                     onChange={(e) => setBringoPassword(e.target.value)}
                     placeholder="••••••••"
                     onKeyDown={(e) => e.key === 'Enter' && handleBringoLogin()}
-                    className="w-full bg-white/[0.05] border border-white/[0.08] text-sm px-4 py-3 pr-11 rounded-xl text-white focus:border-blue-500/70 focus:ring-2 focus:ring-blue-500/15 outline-none transition-all placeholder-gray-600"
+                    className="w-full bg-gray-50 border border-gray-200 text-sm px-4 py-3 pr-11 rounded-xl text-gray-900 focus:border-blue-500 focus:ring-2 focus:ring-blue-500/15 outline-none transition-all placeholder-gray-400"
                   />
                   <button
                     type="button"
                     onClick={() => setShowPassword(!showPassword)}
-                    className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-600 hover:text-gray-300 transition-colors p-1"
+                    className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 transition-colors p-1"
                     aria-label={showPassword ? "Hide password" : "Show password"}
                   >
                     {showPassword ? (
@@ -1162,55 +1213,59 @@ function App() {
                   </button>
                 </div>
               </div>
-            </div>
 
-            {bringoAuthMsg && (
-              <div className={`px-4 py-2.5 rounded-xl text-xs flex items-center gap-2 ${
-                bringoAuthStatus === 'authenticated' ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20' :
-                bringoAuthStatus === 'error' ? 'bg-red-500/10 text-red-400 border border-red-500/20' :
-                'bg-blue-500/10 text-blue-400 border border-blue-500/20'
-              }`}>
-                <div className={`w-1.5 h-1.5 rounded-full flex-shrink-0 ${
-                  bringoAuthStatus === 'authenticated' ? 'bg-emerald-400' :
-                  bringoAuthStatus === 'error' ? 'bg-red-400' : 'bg-blue-400 animate-pulse'
-                }`}></div>
-                {bringoAuthMsg}
+              {bringoAuthMsg && (
+                <div className={`px-4 py-2.5 rounded-xl text-xs flex items-center gap-2 ${
+                  bringoAuthStatus === 'authenticated' ? 'bg-emerald-50 text-emerald-700 border border-emerald-200' :
+                  bringoAuthStatus === 'error' ? 'bg-red-50 text-red-700 border border-red-200' :
+                  'bg-blue-50 text-blue-700 border border-blue-200'
+                }`}>
+                  <div className={`w-1.5 h-1.5 rounded-full flex-shrink-0 ${
+                    bringoAuthStatus === 'authenticated' ? 'bg-emerald-500' :
+                    bringoAuthStatus === 'error' ? 'bg-red-500' : 'bg-blue-500 animate-pulse'
+                  }`}></div>
+                  {bringoAuthMsg}
+                </div>
+              )}
+
+              <button
+                onClick={handleBringoLogin}
+                disabled={bringoAuthStatus === 'loading'}
+                className="w-full bg-gradient-to-r from-blue-600 to-blue-500 hover:from-blue-700 hover:to-violet-600 text-white font-semibold text-sm py-3 rounded-xl transition-all shadow-md shadow-blue-500/25 disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
+              >
+                {bringoAuthStatus === 'loading' ? (
+                  <>
+                    <svg className="animate-spin w-4 h-4" fill="none" viewBox="0 0 24 24"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"></path></svg>
+                    Signing in...
+                  </>
+                ) : (
+                  <>
+                    Sign In
+                    <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 7l5 5m0 0l-5 5m5-5H6" /></svg>
+                  </>
+                )}
+              </button>
+
+              <div className="relative py-1">
+                <div className="absolute inset-0 flex items-center"><div className="w-full border-t border-gray-200"></div></div>
+                <div className="relative flex justify-center"><span className="px-3 bg-white text-[10px] text-gray-400 uppercase tracking-widest">or</span></div>
               </div>
-            )}
 
-            <button
-              onClick={handleBringoLogin}
-              disabled={bringoAuthStatus === 'loading'}
-              className="w-full bg-gradient-to-r from-blue-600 to-blue-500 hover:from-blue-500 hover:to-violet-500 text-white font-semibold text-sm py-3 rounded-xl transition-all shadow-lg shadow-blue-500/20 disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2 mt-1"
-            >
-              {bringoAuthStatus === 'loading' ? (
-                <>
-                  <svg className="animate-spin w-4 h-4" fill="none" viewBox="0 0 24 24"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"></path></svg>
-                  Signing in...
-                </>
-              ) : 'Sign In'}
-            </button>
-
-            <div className="relative py-1">
-              <div className="absolute inset-0 flex items-center"><div className="w-full border-t border-white/[0.06]"></div></div>
-              <div className="relative flex justify-center"><span className="px-3 bg-transparent text-[10px] text-gray-600 uppercase tracking-widest">or</span></div>
+              <button
+                onClick={() => setCurrentPage('chat')}
+                className="w-full bg-white hover:bg-gray-50 border border-gray-200 hover:border-gray-300 text-gray-600 hover:text-gray-900 text-sm font-medium py-3 rounded-xl transition-all"
+              >
+                Continue as guest
+              </button>
             </div>
 
-            <button
-              onClick={() => setCurrentPage('chat')}
-              className="w-full bg-white/[0.04] hover:bg-white/[0.08] border border-white/[0.08] hover:border-white/[0.14] text-gray-400 hover:text-white text-sm font-medium py-3 rounded-xl transition-all"
-            >
-              Continue as guest
-            </button>
+            <div className="mt-8 pt-6 border-t border-gray-100 flex items-center justify-center gap-1.5 text-[11px] text-gray-400">
+              <svg className="w-3 h-3 text-emerald-500" fill="currentColor" viewBox="0 0 20 20"><path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd" /></svg>
+              <span>Gemini AI {apiKey ? 'ready' : 'connecting...'} &middot; Secured by Google Cloud</span>
+            </div>
           </div>
-
-          {/* Footer status */}
-          <div className="mt-5 flex items-center justify-center gap-2 text-[10px] text-gray-700">
-            <svg className="w-3 h-3 text-emerald-600" fill="currentColor" viewBox="0 0 20 20"><path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd" /></svg>
-            <span>Gemini AI {apiKey ? 'ready' : 'loading...'} &middot; Powered by Google Cloud</span>
-          </div>
-
         </div>
+
       </div>
     );
   }
