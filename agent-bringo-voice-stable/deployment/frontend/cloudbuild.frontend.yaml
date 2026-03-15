@@ -1,0 +1,34 @@
+# Cloud Build Configuration for Frontend
+# Optimized with Docker layer caching via Kaniko
+
+steps:
+  # Build with Kaniko for aggressive layer caching
+  - name: 'gcr.io/kaniko-project/executor:latest'
+    args:
+      - --dockerfile=deployment/frontend/Dockerfile.optimized
+      - --destination=gcr.io/$PROJECT_ID/bringo-frontend:$SHORT_SHA
+      - --destination=gcr.io/$PROJECT_ID/bringo-frontend:latest
+      - --cache=true
+      - --cache-ttl=168h  # Cache for 7 days
+      - --compressed-caching=false  # Faster caching
+      - --snapshot-mode=redo  # Faster snapshotting
+      - --use-new-run=true  # Better layer caching
+      - --context=dir://.
+      - --build-arg=VITE_API_URL=https://bringo-api-845266575866.europe-west1.run.app
+      - --build-arg=VITE_API_BASE_URL=https://bringo-api-845266575866.europe-west1.run.app/api/v1
+    timeout: 900s  # 15 minutes
+
+timeout: 900s  # 15 minutes total
+
+options:
+  # Use high CPU machine for faster builds
+  machineType: 'E2_HIGHCPU_8'
+
+  # Increase disk size for caching
+  diskSizeGb: 50
+
+  # Use default logging (faster)
+  logging: CLOUD_LOGGING_ONLY
+
+# Tags for organization
+tags: ['bringo', 'frontend', 'react']

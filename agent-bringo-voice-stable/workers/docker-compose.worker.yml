@@ -1,0 +1,62 @@
+version: '3.8'
+
+# Docker Compose for local testing of Session Keep-Alive Worker
+# Run with: docker-compose -f workers/docker-compose.worker.yml up
+
+services:
+  session-keepalive-worker:
+    build:
+      context: ..
+      dockerfile: workers/Dockerfile.worker
+    container_name: bringo-session-worker
+    restart: unless-stopped
+    environment:
+      # Worker Configuration
+      - SESSION_REFRESH_BUFFER_MINUTES=30
+      - SESSION_POLL_INTERVAL_SECONDS=60
+      - SESSION_VALIDATE_INTERVAL_MINUTES=15
+
+      # Bringo Configuration (from .env or override here)
+      - BRINGO_BASE_URL=${BRINGO_BASE_URL:-https://www.bringo.ro}
+      - BRINGO_STORE=${BRINGO_STORE:-carrefour_park_lake}
+      - BRINGO_USERNAME=${BRINGO_USERNAME}
+      - BRINGO_PASSWORD=${BRINGO_PASSWORD}
+
+      # Logging
+      - LOG_LEVEL=${LOG_LEVEL:-INFO}
+
+    volumes:
+      # Mount data directory for SQLite persistence
+      - ../data:/app/data
+
+      # Mount Chrome user data for Selenium (optional, for session persistence)
+      - chrome-data:/tmp/chrome-user-data
+
+    # Resource limits
+    deploy:
+      resources:
+        limits:
+          cpus: '1.0'
+          memory: 2G
+        reservations:
+          cpus: '0.5'
+          memory: 1G
+
+    # Health check
+    healthcheck:
+      test: ["CMD", "python", "-c", "import sys; sys.exit(0)"]
+      interval: 5m
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+
+    # Logging
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+volumes:
+  chrome-data:
+    driver: local
