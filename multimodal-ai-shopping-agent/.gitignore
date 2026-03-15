@@ -71,4 +71,4 @@ htmlcov/
 # Data
 *.csv
 *.parquet
-*.jsonl
+*.jsonl.env.production
