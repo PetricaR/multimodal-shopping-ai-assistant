@@ -1,7 +1,0 @@
-apiVersion: networking.gke.io/v1
-kind: ManagedCertificate
-metadata:
-  name: bringo-api-cert
-spec:
-  domains:
-    - api.bringo.formare-ai.com # Replace with actual domain user controls or a nip.io domain for testing
