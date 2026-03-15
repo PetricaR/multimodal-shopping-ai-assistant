@@ -31,15 +31,13 @@ BACKEND_URL=$(gcloud run services describe shopping-ai-api \
 if [ -n "$BACKEND_URL" ]; then
   echo "✅ Backend API found: ${BACKEND_URL}"
 
-  # Update frontend .env with backend URL
+  # Update frontend .env with backend URL only - API key is fetched at runtime from backend
   echo "📝 Updating frontend environment..."
-  GEMINI_KEY="${VITE_GOOGLE_API_KEY:-$(grep VITE_GOOGLE_API_KEY ./app/.env 2>/dev/null | cut -d= -f2-)}"
   cat > ./app/.env.production <<EOF
 VITE_API_URL=${BACKEND_URL}
 VITE_API_BASE_URL=${BACKEND_URL}/api/v1
-VITE_GOOGLE_API_KEY=${GEMINI_KEY}
 EOF
-  echo "✅ Environment configured"
+  echo "✅ Environment configured (API key served at runtime, not baked into bundle)"
 else
   echo "⚠️  Backend API not found. Frontend will use default configuration."
   echo "   Deploy backend first with: ./deploy-backend-fast.sh"
