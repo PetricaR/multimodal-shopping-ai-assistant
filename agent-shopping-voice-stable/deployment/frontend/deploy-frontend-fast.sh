@@ -1,6 +1,6 @@
 #!/bin/bash
 
-# Optimized Fast Deployment for Bringo Frontend
+# Optimized Fast Deployment for Shopping AI Frontend
 # Uses Cloud Build with Kaniko caching for 5-10x faster builds
 
 set -e
@@ -8,11 +8,11 @@ set -e
 # Configuration
 PROJECT_ID="formare-ai"
 REGION="europe-west1"
-SERVICE_NAME="bringo-frontend"
+SERVICE_NAME="shopping-ai-frontend"
 IMAGE_NAME="gcr.io/${PROJECT_ID}/${SERVICE_NAME}:latest"
 
 echo "╔════════════════════════════════════════════════════════════╗"
-echo "║  🚀 Fast Deploy: Bringo Frontend                          ║"
+echo "║  🚀 Fast Deploy: Shopping AI Frontend                     ║"
 echo "║  ⚡ Using Kaniko + Layer Caching                          ║"
 echo "╚════════════════════════════════════════════════════════════╝"
 echo ""
@@ -23,7 +23,7 @@ echo ""
 
 # Get backend API URL if it exists
 echo "🔍 Checking for backend API URL..."
-BACKEND_URL=$(gcloud run services describe bringo-api \
+BACKEND_URL=$(gcloud run services describe shopping-ai-api \
   --region=${REGION} \
   --project=${PROJECT_ID} \
   --format='value(status.url)' 2>/dev/null || echo "")
