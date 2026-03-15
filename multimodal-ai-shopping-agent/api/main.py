@@ -60,7 +60,11 @@ def create_app() -> FastAPI:
     application.include_router(chef.router)
     application.include_router(config.router)
     application.include_router(debug.router)
-    
+
+    @application.api_route("/health", methods=["GET", "HEAD"])
+    async def health():
+        return {"status": "ok"}
+
     return application
 
 # --- 4. Application Instance ---
