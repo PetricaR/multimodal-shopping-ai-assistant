@@ -15,7 +15,7 @@ IMAGE_NAME="gcr.io/${PROJECT_ID}/${SERVICE_NAME}:latest"
 CLOUD_SQL_INSTANCE="formare-ai:europe-west1:bringo-db"
 
 echo "╔════════════════════════════════════════════════════════════╗"
-echo "║  🚀 Fast Deploy: Bringo Backend API                       ║"
+echo "║  🚀 Fast Deploy: Shopping AI Backend API                  ║"
 echo "║  ⚡ Using Kaniko + Layer Caching                          ║"
 echo "╚════════════════════════════════════════════════════════════╝"
 echo ""

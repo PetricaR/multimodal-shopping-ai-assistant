@@ -1,6 +1,6 @@
 #!/bin/bash
 
-# Optimized Parallel Deployment for Bringo Full Stack
+# Optimized Parallel Deployment for Shopping AI Full Stack
 # Builds backend and frontend in parallel for maximum speed
 
 set -e
@@ -101,8 +101,8 @@ echo "  Deploying Backend API to Cloud Run"
 echo "════════════════════════════════════════════════════════════"
 echo ""
 
-gcloud run deploy bringo-api \
-  --image=gcr.io/${PROJECT_ID}/bringo-api:latest \
+gcloud run deploy shopping-ai-api \
+  --image=gcr.io/${PROJECT_ID}/shopping-ai-api:latest \
   --platform=managed \
   --region=${REGION} \
   --project=${PROJECT_ID} \
@@ -123,7 +123,7 @@ echo "✅ Backend deployed!"
 echo ""
 
 # Get backend URL
-BACKEND_URL=$(gcloud run services describe bringo-api \
+BACKEND_URL=$(gcloud run services describe shopping-ai-api \
   --region=${REGION} \
   --project=${PROJECT_ID} \
   --format='value(status.url)')
@@ -134,8 +134,8 @@ echo "  Deploying Frontend to Cloud Run"
 echo "════════════════════════════════════════════════════════════"
 echo ""
 
-gcloud run deploy bringo-frontend \
-  --image=gcr.io/${PROJECT_ID}/bringo-frontend:latest \
+gcloud run deploy shopping-ai-frontend \
+  --image=gcr.io/${PROJECT_ID}/shopping-ai-frontend:latest \
   --platform=managed \
   --region=${REGION} \
   --project=${PROJECT_ID} \
@@ -154,7 +154,7 @@ echo "✅ Frontend deployed!"
 echo ""
 
 # Get frontend URL
-FRONTEND_URL=$(gcloud run services describe bringo-frontend \
+FRONTEND_URL=$(gcloud run services describe shopping-ai-frontend \
   --region=${REGION} \
   --project=${PROJECT_ID} \
   --format='value(status.url)')
@@ -173,8 +173,8 @@ echo "   • Subsequent: ~2-5 minutes total (with cache)"
 echo "   • Speed boost: 50-60% faster than sequential"
 echo ""
 echo "📊 Monitoring:"
-echo "   Backend logs:  https://console.cloud.google.com/run/detail/${REGION}/bringo-api/logs?project=${PROJECT_ID}"
-echo "   Frontend logs: https://console.cloud.google.com/run/detail/${REGION}/bringo-frontend/logs?project=${PROJECT_ID}"
+echo "   Backend logs:  https://console.cloud.google.com/run/detail/${REGION}/shopping-ai-api/logs?project=${PROJECT_ID}"
+echo "   Frontend logs: https://console.cloud.google.com/run/detail/${REGION}/shopping-ai-frontend/logs?project=${PROJECT_ID}"
 echo ""
 echo "🚀 Open in browser:"
 echo "   ${FRONTEND_URL}"
