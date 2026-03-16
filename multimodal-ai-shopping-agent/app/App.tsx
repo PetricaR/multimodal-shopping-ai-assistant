@@ -51,9 +51,9 @@ import { ProductResultsBlock } from './components/ProductResultsBlock';
 // HELPERS
 // =====================================================================
 
-/** Strip model thinking blocks (<thinking>...</thinking>) before displaying */
+/** Strip model thinking blocks (<think>...</think> or <thinking>...</thinking>) before displaying, even if unclosed */
 const stripThinking = (text: string): string =>
-  text.replace(/<thinking>[\s\S]*?<\/thinking>/gi, '').trim();
+  text.replace(/<think(?:ing)?>[\s\S]*?(?:<\/think(?:ing)?>|$)/gi, '').trim();
 
 /** Remove agent-internal logic patterns from chat display text */
 const filterAgentDisplay = (text: string): string => {
