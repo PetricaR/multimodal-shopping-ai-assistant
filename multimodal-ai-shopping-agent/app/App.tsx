@@ -59,41 +59,66 @@ const stripThinking = (text: string): string =>
 const filterAgentDisplay = (text: string): string => {
   let out = text;
 
-  // 1. Strip fenced code blocks (JSON tool args, etc.)
+  // 1. Strip fenced code blocks
   out = out.replace(/```[\s\S]*?```/g, '');
 
-  // 2. Strip markdown headings entirely (agent should never use them)
+  // 2. Strip markdown headings
   out = out.replace(/^#{1,6}\s+.+$/gm, '');
 
-  // 3. Strip "bold heading" lines that are internal reasoning titles
-  //    e.g. "**Analyzing the Request**", "**Formulating Search Queries**"
-  out = out.replace(/^\*\*[^*\n]{3,60}\*\*\s*$/gm, '');
+  // 3. Strip bold-only heading lines e.g. "**Analyzing the Request**"
+  out = out.replace(/^\*\*[^*\n]{2,80}\*\*\s*$/gm, '');
 
-  // 4. Strip whole paragraphs that are clearly internal planning/reasoning
-  //    Matches: "I've determined...", "I'm focusing on...", "I've confirmed...", "I've formulated..."
-  const planningParagraph = /^[^\n]*\b(I(?:'ve|'m| have| am| will|'ll))\s+(?:determined|confirmed|identified|formulated|constructed|focused|decided|concluded|noted|realized|going to|now going|about to|planning)[^\n]*/gim;
-  out = out.replace(planningParagraph, '');
-
-  // 5. Strip sentences/lines describing tool employment
-  out = out.replace(/[^.!?\n]*\b(employ|use|call|invoke|execute|trigger|utilize)\s+the\s+\w[\w_]*\s+tool[^.!?\n]*/gi, '');
-  out = out.replace(/[^.!?\n]*\b(I(?:'ve| have| will|'ll| am|'m))\s+(?:decided to |going to |now |about to )?(?:employ|use|call|invoke|execute|run|trigger)\s+\w[\w_]*[^.!?\n]*/gi, '');
-
-  // 6. Strip lines describing parameter configuration
-  out = out.replace(/^[^.!?\n]*\b(configured?|set|specified|passed|included)\s+the\s+`?\w+`?\s*(parameter|param|argument|arg|query|value)[^.!?\n]*$/gim, '');
-
-  // 7. Strip lines about search strategy/limits
-  out = out.replace(/^[^.!?\n]*\b(search strategy|opted to search|set a limit|keep results concise|search across)[^.!?\n]*$/gim, '');
-
-  // 8. Strip inline backtick code (tool names, params — always technical)
+  // 4. Strip inline backtick code
   out = out.replace(/`[^`]+`/g, '');
 
-  // 9. Strip bare JSON objects/arrays
+  // 5. Strip bare JSON objects/arrays
   out = out.replace(/^\s*[\[\{][\s\S]*?[\]\}]\s*$/gm, '');
 
-  // 10. Ensure space after punctuation concatenated by streaming (e.g. "Got it!For" → "Got it! For")
-  out = out.replace(/([.!?])([A-Z])/g, '$1 $2');
+  // 6. Remove every line that is clearly agent internal narration.
+  //    Strategy: split into lines, drop any line that matches a narration pattern,
+  //    keep everything else.
+  const narrationPatterns = [
+    // "Let me ...", "Let me search / find / look / check / use ..."
+    /^\s*let me\b/i,
+    // "I'll ...", "I will ...", "I'm going to ...", "I am going to ..."
+    /^\s*i(?:'ll| will| am going to|'m going to)\b/i,
+    // "I'm searching / looking / checking / calling / using / executing ..."
+    /^\s*i(?:'m| am)\s+(?:now\s+)?(?:search|look|check|call|using|execut|fetch|retriev|query|find|going)/i,
+    // "I've found / searched / called / executed / identified ..."
+    /^\s*i(?:'ve| have)\s+(?:found|search|call|execut|fetch|retriev|identif|formul|determin|confirm|noted|construct)/i,
+    // "I need to ..." / "I want to ..."
+    /^\s*i\s+(?:need|want)\s+to\b/i,
+    // "Searching for ...", "Looking for ...", "Fetching ...", "Calling ..."
+    /^\s*(?:search|look|fetch|call|execut|retriev|query|find)ing\b/i,
+    // "Now searching / Now I will ..."
+    /^\s*now\s+(?:i\s+)?(?:search|look|call|fetch|execut)/i,
+    // Lines that mention tool names directly
+    /\bfind_shopping_items\b|\bsuggest_substitution\b|\badd_to_cart\b|\bget_weather\b|\bget_calendar\b/i,
+    // "Using the X tool", "Calling the X tool"
+    /\b(?:using|calling|invoking|executing)\s+the\s+\w[\w_]*\s+tool\b/i,
+    // "Based on the search results", "Based on the tool response"
+    /^\s*based on (?:the |my )?(?:search|tool|query|result|response)/i,
+    // "The search returned ...", "The tool returned ..."
+    /^\s*the\s+(?:search|tool|query|api)\s+(?:return|found|gave|provided|yield)/i,
+    // Lines that are ONLY asterisks, dashes, or whitespace (section dividers)
+    /^\s*[-*_]{2,}\s*$/,
+  ];
 
-  // 11. Collapse multiple blank lines
+  const lines = out.split('\n');
+  const filtered = lines.filter(line => {
+    const trimmed = line.trim();
+    if (!trimmed) return true; // keep blank lines (for spacing)
+    return !narrationPatterns.some(p => p.test(trimmed));
+  });
+  out = filtered.join('\n');
+
+  // 7. Fix spacing issues from streaming concatenation
+  // "Got it!For" → "Got it! For"
+  out = out.replace(/([.!?])([A-Z])/g, '$1 $2');
+  // "greatvegetarian" → won't fix word-level merges (handled at source), but fix comma spacing
+  out = out.replace(/,([^\s])/g, ', $1');
+
+  // 8. Collapse 3+ blank lines to 1
   out = out.replace(/\n{3,}/g, '\n\n');
 
   return out.trim();
@@ -296,10 +321,16 @@ Vision: When user shares an image → immediately identify ALL food/products vis
 Voice: You are listening in real time. Respond immediately. Handle interruptions gracefully.
 Context: Remember what was found this session. "The first one" = most recent search result #1.
 
+# SEARCH LANGUAGE — CRITICAL
+- The product catalog is in ROMANIAN. ALL search queries passed to find_shopping_items MUST be in Romanian, regardless of what language the user spoke.
+- Translate every ingredient/product to Romanian before searching.
+- Examples: "eggs" → "ouă", "milk" → "lapte", "heavy cream" → "smântână pentru frișcă", "butter" → "unt", "flour" → "făină", "sugar" → "zahăr", "chicken" → "pui", "bread" → "pâine", "cheese" → "brânză", "mascarpone" → "mascarpone", "ladyfingers" → "piscoturi", "cocoa powder" → "cacao", "coffee liqueur" → "lichior de cafea", "vanilla extract" → "esență de vanilie", "strong coffee" → "cafea tare", "olive oil" → "ulei de măsline", "tomatoes" → "roșii", "onion" → "ceapă", "garlic" → "usturoi".
+- If unsure of the Romanian translation, use the most common Romanian supermarket term.
+
 # TOOLS & WHEN TO USE THEM
 1. find_shopping_items(queries[], multi_store, limit)
    → Any product search request. Always search, never guess products.
-   → Multi-product: queries=["milk","eggs","bread"] in ONE call
+   → Multi-product: queries=["lapte","ouă","pâine"] in ONE call — ALWAYS IN ROMANIAN
 
 2. add_to_cart(product_id, quantity, product_name, price)
    → User says yes/add/ok/sure/that one/the first → CALL THIS IMMEDIATELY
@@ -371,7 +402,7 @@ Weather-aware flow:
 - Your entire visible response must be pure natural conversation — no technical details, no internal reasoning, no JSON.
 - Bad: "**Analyzing the Request** — I've determined the user wants eggs. I've formulated a search strategy focusing on 'oua bio'."
 - Bad: "I've decided to employ the \`find_shopping_items\` tool with \`queries\`=[\"eggs\",\"milk\"]"
-- Good: (call tool silently, then) "Found eggs and milk! Best egg option is Toneli 10-pack at 22.19 RON. Want to add them?"
+- Good: (call tool silently with queries=["ouă","lapte"], then) "Found eggs and milk! Best egg option is Toneli 10-pack at 22.19 RON. Want to add them?"
 `;
 
 const SUGGESTIONS = [
@@ -439,6 +470,7 @@ function App() {
   const [isCheckingAuth, setIsCheckingAuth] = useState(true);
   const [apiKey, setApiKey] = useState<string>('');
   const [products, setProducts] = useState<Product[]>([]);
+  const [searchQueryGroups, setSearchQueryGroups] = useState<{ query: string; products: Product[] }[]>([]);
   const [isSubstitutionMode, setIsSubstitutionMode] = useState<boolean>(false);
   const [chatHistory, setChatHistory] = useState<ChatEntry[]>([]);
   const [logs, setLogs] = useState<LogMessage[]>([]);
@@ -587,17 +619,6 @@ function App() {
       type: 'text',
       role,
       text,
-      timestamp: new Date().toLocaleTimeString(),
-    };
-    setChatHistory(prev => [...prev, entry]);
-  };
-
-  const addProductResults = (queryGroups: { query: string; products: Product[] }[], isSubstitution: boolean) => {
-    const entry: ProductChatEntry = {
-      id: `products-${Date.now()}`,
-      type: 'product_results',
-      queryGroups,
-      isSubstitution,
       timestamp: new Date().toLocaleTimeString(),
     };
     setChatHistory(prev => [...prev, entry]);
@@ -795,16 +816,14 @@ function App() {
               hasUpdates = true;
             }
 
-            // Agent speech transcript (AUDIO modality) — this IS the real response, stream it live
+            // Agent speech transcript (AUDIO modality) — accumulate for fallback, do NOT stream to chat
+            // (sub-word tokens arrive without spaces; we use textOnlyBufferRef for proper chat display)
             if (msg.serverContent?.outputTranscription?.text) {
               const newText = stripThinking(msg.serverContent.outputTranscription.text);
-              agentStreamingTextRef.current += newText;
+              const prev = agentStreamingTextRef.current;
+              const needsSpace = prev.length > 0 && !/\s$/.test(prev) && !/^\s/.test(newText);
+              agentStreamingTextRef.current += (needsSpace ? ' ' : '') + newText;
               hasAudioTranscriptRef.current = true;
-
-              if (currentStreamingRole.current !== 'agent') {
-                currentStreamingRole.current = 'agent';
-                addChatMessage('agent', agentStreamingTextRef.current);
-              }
               hasUpdates = true;
             }
 
@@ -813,7 +832,10 @@ function App() {
             if (msg.serverContent?.modelTurn?.parts) {
               for (const part of msg.serverContent.modelTurn.parts) {
                 if (part.text) {
-                  textOnlyBufferRef.current += stripThinking(part.text);
+                  const chunk = stripThinking(part.text);
+                  const prevBuf = textOnlyBufferRef.current;
+                  const sep = prevBuf.length > 0 && !/\s$/.test(prevBuf) && !/^\s/.test(chunk) ? ' ' : '';
+                  textOnlyBufferRef.current += sep + chunk;
                   hasUpdates = true;
                 }
               }
@@ -832,12 +854,9 @@ function App() {
               const timeSinceLastUpdate = now - lastUIUpdateRef.current;
 
               if (timeSinceLastUpdate >= UI_UPDATE_THROTTLE_MS) {
+                // Only stream user speech transcript live; agent text shown only at turnComplete
                 if (currentStreamingRole.current === 'user' && userStreamingTextRef.current.trim()) {
                   updateLastChatMessage('user', userStreamingTextRef.current.trim());
-                }
-                // Audio transcript: update live (real spoken content)
-                if (hasAudioTranscriptRef.current && currentStreamingRole.current === 'agent' && agentStreamingTextRef.current.trim()) {
-                  updateLastChatMessage('agent', agentStreamingTextRef.current.trim());
                 }
                 lastUIUpdateRef.current = now;
               }
@@ -871,19 +890,16 @@ function App() {
                 userStreamingTextRef.current = '';
               }
 
-              if (hasAudioTranscriptRef.current) {
-                // AUDIO mode: finalize the live transcript that's already in chat
-                if (agentStreamingTextRef.current.trim()) {
-                  updateLastChatMessage('agent', agentStreamingTextRef.current.trim());
-                  addLog('agent', agentStreamingTextRef.current.trim());
-                }
-              } else {
-                // TEXT-only mode: now safe to show the full response (tool narration discarded on toolCall)
-                const finalText = filterAgentDisplay(textOnlyBufferRef.current).trim();
-                if (finalText) {
-                  addChatMessage('agent', finalText);
-                  addLog('agent', finalText);
-                }
+              // Prefer textOnlyBufferRef (text modality — properly spaced) over audio transcript.
+              // Audio transcript sub-word tokens arrive without spaces and produce merged words.
+              const textSource = textOnlyBufferRef.current.trim()
+                ? textOnlyBufferRef.current
+                : agentStreamingTextRef.current;
+
+              const finalText = filterAgentDisplay(textSource).trim();
+              if (finalText) {
+                addChatMessage('agent', finalText);
+                addLog('agent', finalText);
               }
 
               agentStreamingTextRef.current = '';
@@ -920,27 +936,27 @@ function App() {
                   if (call.name === 'find_shopping_items') {
                     const args = call.args as any;
                     const queries: string[] = Array.isArray(args.queries) ? args.queries : [args.queries || args.query_text || ''];
-                    const limit = args.limit || 8;
+                    // Fewer results per query when searching many items at once
+                    const perQueryLimit = queries.length > 3 ? 4 : (args.limit || 6);
                     const multiStore = args.multi_store || false;
-                    // Search per-query to preserve grouping for display
                     const queryGroups: { query: string; products: Product[] }[] = [];
                     for (const q of queries) {
-                      const qProducts = await searchProducts([q], multiStore, limit);
+                      const qProducts = await searchProducts([q], multiStore, perQueryLimit);
                       queryGroups.push({ query: q, products: qProducts });
                     }
                     const allProducts = queryGroups.flatMap(g => g.products);
                     setProducts(allProducts);
+                    setSearchQueryGroups(queryGroups);
                     setIsSubstitutionMode(false);
-                    addProductResults(queryGroups, false);
                     addLog('system', `FOUND ${allProducts.length} products across ${queries.length} queries`);
                     result = { products: allProducts.map(p => ({ id: p.product_id, name: p.product_name, price: p.price, store: p.producer })) };
                   }
                   else if (call.name === 'suggest_substitution') {
                     const args = call.args as any;
-                    const data = await searchByProductName(args.product_name, 10);
+                    const data = await searchByProductName(args.product_name, 6);
                     setProducts(data);
+                    setSearchQueryGroups([{ query: args.product_name, products: data }]);
                     setIsSubstitutionMode(true);
-                    addProductResults([{ query: args.product_name, products: data }], true);
                     result = { substitutions: data.map(p => ({ id: p.product_id, name: p.product_name, price: p.price })) };
                   }
                   else if (call.name === 'add_to_cart') {
@@ -1562,6 +1578,28 @@ function App() {
           </div>
         )}
 
+        {/* New Chat button */}
+        <div className="px-4 pt-2 pb-1 bg-white">
+          <button
+            onClick={() => {
+              setChatHistory([]);
+              setProducts([]);
+              setSearchQueryGroups([]);
+              userStreamingTextRef.current = '';
+              agentStreamingTextRef.current = '';
+              textOnlyBufferRef.current = '';
+              hasAudioTranscriptRef.current = false;
+              currentStreamingRole.current = null;
+            }}
+            className="w-full flex items-center justify-center gap-2 py-2 rounded-xl border border-dashed border-gray-200 text-gray-400 hover:text-blue-600 hover:border-blue-300 hover:bg-blue-50 transition-all text-xs font-medium"
+          >
+            <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+              <path strokeLinecap="round" strokeLinejoin="round" d="M12 4v16m8-8H4" />
+            </svg>
+            New Chat
+          </button>
+        </div>
+
         {/* Input Area */}
         <div className="p-3 bg-white border-t border-gray-100">
           <div className="flex items-center gap-2">
@@ -1575,7 +1613,7 @@ function App() {
               </button>
             ) : (
               <div className="flex-1 space-y-2">
-                <form onSubmit={handleTextSubmit} className="relative flex items-center gap-2">
+                <form onSubmit={handleTextSubmit} className="relative flex items-end gap-2">
                   {/* Image Upload Button */}
                   <input
                     ref={imageInputRef}
@@ -1587,7 +1625,7 @@ function App() {
                   <button
                     type="button"
                     onClick={() => imageInputRef.current?.click()}
-                    className="w-9 h-9 rounded-full flex items-center justify-center bg-gray-100 border border-gray-200 hover:bg-purple-50 hover:border-purple-300 text-gray-500 hover:text-purple-600 transition-all flex-shrink-0"
+                    className="w-9 h-9 mb-0.5 rounded-full flex items-center justify-center bg-gray-100 border border-gray-200 hover:bg-purple-50 hover:border-purple-300 text-gray-500 hover:text-purple-600 transition-all flex-shrink-0"
                     title="Send an image"
                   >
                     <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -1596,14 +1634,20 @@ function App() {
                   </button>
 
                   <div className="relative flex-1">
-                    <input
-                      type="text"
+                    <textarea
+                      rows={2}
                       value={textInput}
                       onChange={(e) => setTextInput(e.target.value)}
-                      placeholder="Type a message or send an image..."
-                      className="w-full bg-[#f1f3f4] text-sm p-3 pr-28 rounded-full text-gray-800 focus:bg-white focus:ring-2 focus:ring-blue-500/30 focus:border-blue-300 border border-transparent outline-none placeholder-gray-400 transition-all"
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter' && !e.shiftKey) {
+                          e.preventDefault();
+                          handleTextSubmit(e as any);
+                        }
+                      }}
+                      placeholder="Type a message... (Enter to send, Shift+Enter for new line)"
+                      className="w-full bg-[#f1f3f4] text-sm p-3 pr-28 rounded-2xl text-gray-800 focus:bg-white focus:ring-2 focus:ring-blue-500/30 focus:border-blue-300 border border-transparent outline-none placeholder-gray-400 transition-all resize-none leading-relaxed"
                     />
-                    <div className="absolute right-2 top-1/2 -translate-y-1/2 flex items-center gap-1">
+                    <div className="absolute right-2 bottom-2 flex items-center gap-1">
                       {/* Sound Toggle */}
                       <button
                         type="button"
@@ -1744,7 +1788,7 @@ function App() {
                 </button>
               </div>
               <ProductResultsBlock
-                queryGroups={[{ query: 'products', products }]}
+                queryGroups={searchQueryGroups.length > 0 ? searchQueryGroups : [{ query: 'products', products }]}
                 isSubstitution={isSubstitutionMode}
                 cartItems={cartItems}
                 onAddToCart={handleAddToCart}

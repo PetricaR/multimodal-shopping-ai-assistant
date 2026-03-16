@@ -1,13 +1,13 @@
 """
 Calendar integration to fetch Public Holidays
 """
+import os
 import logging
 import asyncio
 from functools import partial
 from fastapi import APIRouter
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 import requests
-from config.settings import settings
 
 router = APIRouter(prefix="/api/v1/calendar", tags=["calendar"])
 logger = logging.getLogger(__name__)
@@ -20,13 +20,13 @@ async def get_holidays(days: int = 7):
     Get Romanian public holidays for the next N days.
     """
     try:
-        api_key = settings.GOOGLE_API_KEY
+        api_key = os.environ.get("GOOGLE_MAPS_API_KEY")
         if not api_key:
-            return {"error": "Missing GOOGLE_API_KEY"}
+            return {"error": "Missing GOOGLE_MAPS_API_KEY"}
 
-        now = datetime.utcnow()
-        time_min = now.isoformat() + "Z"
-        time_max = (now + timedelta(days=days)).isoformat() + "Z"
+        now = datetime.now(timezone.utc)
+        time_min = now.isoformat().replace("+00:00", "Z")
+        time_max = (now + timedelta(days=days)).isoformat().replace("+00:00", "Z")
 
         from urllib.parse import quote
         encoded_calendar_id = quote(CALENDAR_ID)
