@@ -660,31 +660,67 @@ class CartService:
     def get_csrf_token(phpsessid: str, cookies: Dict[str, str]) -> Optional[str]:
         """
         Get a fresh CSRF token from the dedicated customer token endpoint.
-        Highly recommended by user for robust tool usage.
+        Falls back to scraping the cart page if the JSON endpoint returns an empty body.
         """
         try:
-            url = f"{settings.BRINGO_BASE_URL}/ro/customer/get-token"
+            base_url = settings.BRINGO_BASE_URL
             session = requests.Session()
             session.cookies.set('PHPSESSID', phpsessid, domain='www.bringo.ro')
             for name, value in cookies.items():
                 session.cookies.set(name, value, domain='www.bringo.ro')
-            
+
             headers = {
                 'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/136.0.0.0 Safari/537.36',
                 'X-Requested-With': 'XMLHttpRequest',
                 'Accept': 'application/json, text/javascript, */*; q=0.01'
             }
-            
-            response = session.get(url, headers=headers, timeout=10)
-            if response.status_code == 200:
-                data = response.json()
-                token = data.get('token')
-                if token:
-                    logger.info("✅ Successfully retrieved CSRF token from endpoint")
-                    return token
-            
-            logger.warning(f"⚠️ Failed to get token from endpoint: Status {response.status_code}")
+
+            # --- Primary: JSON endpoint ---
+            url = f"{base_url}/ro/customer/get-token"
+            try:
+                response = session.get(url, headers=headers, timeout=10)
+                if response.status_code == 200:
+                    body = response.text.strip()
+                    if body:  # Only parse if body is non-empty
+                        try:
+                            data = response.json()
+                            token = data.get('token') or data.get('csrf_token') or data.get('value')
+                            if token:
+                                logger.info("✅ CSRF token retrieved from JSON endpoint")
+                                return token
+                        except Exception:
+                            pass  # Fall through to HTML fallback
+                    else:
+                        logger.warning("⚠️ CSRF endpoint returned empty body, trying HTML fallback...")
+                else:
+                    logger.warning(f"⚠️ CSRF endpoint returned HTTP {response.status_code}, trying HTML fallback...")
+            except Exception as e:
+                logger.warning(f"⚠️ CSRF JSON endpoint error: {e}, trying HTML fallback...")
+
+            # --- Fallback: scrape CSRF token from cart page HTML ---
+            import re as _re
+            try:
+                cart_url = f"{base_url}/ro/cart"
+                page_resp = session.get(cart_url, timeout=10)
+                if page_resp.status_code == 200:
+                    html = page_resp.text
+                    patterns = [
+                        r'name="sylius_add_to_cart\[_token\]"\s+value="([^"]+)"',
+                        r'name="[^"]*_token[^"]*"\s+value="([^"]{10,})"',
+                        r'value="([^"]{20,})"\s+name="[^"]*_token[^"]*"',
+                    ]
+                    for pat in patterns:
+                        m = _re.search(pat, html)
+                        if m:
+                            token = m.group(1)
+                            logger.info("✅ CSRF token scraped from cart HTML fallback")
+                            return token
+            except Exception as e:
+                logger.warning(f"⚠️ CSRF HTML fallback failed: {e}")
+
+            logger.warning("⚠️ Could not retrieve CSRF token — continuing without it")
             return None
+
         except Exception as e:
             logger.error(f"Error getting CSRF token: {e}")
             return None
@@ -873,29 +909,71 @@ class CartService:
 
     @staticmethod
     def get_cart_summary(phpsessid: str, cookies: Dict[str, str]) -> Dict[str, Any]:
-        """Get current cart contents"""
+        """Get current cart contents with full item details"""
         try:
             session = requests.Session()
             session.cookies.set('PHPSESSID', phpsessid, domain='www.bringo.ro')
             for name, value in cookies.items():
                 session.cookies.set(name, value, domain='www.bringo.ro')
-            
-            url = f"{settings.BRINGO_BASE_URL}/ro/_partial/cart/summary"
+
+            # Fetch the full cart page to extract items
+            url = f"{settings.BRINGO_BASE_URL}/ro/cart"
             response = session.get(url, timeout=15)
-            
-            if response.status_code == 200:
-                match = re.search(r'badge-items[^>]*>(\d+)<', response.text)
-                cart_count = int(match.group(1)) if match else 0
+
+            if response.status_code != 200:
                 return {
-                    "status": "success",
-                    "cart_count": cart_count
-                }
-            else:
-                 return {
                     "status": "partial",
                     "cart_count": -1,
+                    "items": [],
                     "message": f"HTTP {response.status_code}"
                 }
+
+            html = response.text
+            items = []
+
+            import re as _re
+            item_blocks = _re.findall(r'<tr[^>]*class="[^"]*sylius-cart-item[^"]*"[^>]*>(.*?)</tr>', html, _re.DOTALL)
+
+            for block in item_blocks:
+                pid_match = _re.search(r'/products/[^/]+/product-(\d+)', block)
+                if not pid_match:
+                    pid_match = _re.search(r'data-product-id="(\d+)"', block)
+
+                cid_match = _re.search(r'data-cart-item-id="(\d+)"', block)
+                if not cid_match:
+                    cid_match = _re.search(r'data-item-id="(\d+)"', block)
+
+                name_match = _re.search(r'<a[^>]*>([^<]+)</a>', block)
+                product_name = name_match.group(1).strip() if name_match else "Unknown Product"
+
+                qty_match = _re.search(r'value="(\d+)"[^>]*name="[^"]*quantity[^"]*"', block)
+                if not qty_match:
+                    qty_match = _re.search(r'name="[^"]*quantity[^"]*"[^>]*value="(\d+)"', block)
+                quantity = int(qty_match.group(1)) if qty_match else 1
+
+                price = 0.0
+                price_match = _re.search(r'(\d+[.,]\d{2})\s*lei', block)
+                if price_match:
+                    price = float(price_match.group(1).replace(',', '.'))
+
+                img_match = _re.search(r'<img[^>]*src="([^"]+)"', block)
+                image_url = img_match.group(1) if img_match else None
+
+                if pid_match:
+                    items.append({
+                        "product_id": pid_match.group(1),
+                        "cart_item_id": cid_match.group(1) if cid_match else None,
+                        "product_name": product_name,
+                        "quantity": quantity,
+                        "price": price,
+                        "image_url": image_url
+                    })
+
+            return {
+                "status": "success",
+                "cart_count": len(items),
+                "items": items
+            }
         except Exception as e:
             logger.error(f"Error fetching cart: {e}")
-            return {"status": "error", "message": str(e)}
+            return {"status": "error", "message": str(e), "items": []}

@@ -15,7 +15,10 @@
       "Bash(ls node_modules/.bin/tailwind*)",
       "Bash(node -e \"require\\(''tailwindcss''\\)\")",
       "Bash(node -e \"const tw = require\\(''tailwindcss''\\); console.log\\(tw.version || ''no version''\\); const pkg = require\\(''./node_modules/tailwindcss/package.json''\\); console.log\\(pkg.version\\)\")",
-      "Read(//private/tmp/**)"
+      "Read(//private/tmp/**)",
+      "Bash(find /Users/radanpetrica/PFA/hackathons/gemini-live-agent-challange/multimodal-shopping-ai-assistant/multimodal-ai-shopping-agent -name vector_search -o -name search_engine* -o -name SearchEngine*)",
+      "Bash(for f:*)",
+      "Bash(do echo:*)"
     ]
   }
 }
