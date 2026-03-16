@@ -13,6 +13,7 @@ from api.models import SearchRequest, SearchResponse, ProductInfo, HealthRespons
 from api import dependencies
 from services.search_service import SearchService
 from services.search_logger import log_search_event
+from security.guardrails import check_input
 
 logger = logging.getLogger(__name__)
 
@@ -119,6 +120,26 @@ async def search_similar_products(request: SearchRequest):
 
     if not request.product_name and not request.query_text and not request.queries:
         raise HTTPException(status_code=400, detail="Either product_name, query_text or queries must be provided")
+
+    # --- Guardrails: validate all user-supplied text fields ---
+    user_texts = []
+    if request.query_text:
+        user_texts.append(request.query_text)
+    if request.queries:
+        user_texts.extend(request.queries)
+
+    for text in user_texts:
+        guard = await check_input(text)
+        if not guard.allowed:
+            logger.warning(f"Guardrails blocked search request (reason={guard.reason}): '{text[:80]}'")
+            raise HTTPException(
+                status_code=400,
+                detail="Pot să te ajut doar cu produse din catalogul Bringo/Carrefour. Ce produs cauți?",
+            )
+    # Replace user text with sanitized version to strip injection chars
+    if request.query_text and user_texts:
+        request.query_text = user_texts[0]
+    # -----------------------------------------------------------
 
     try:
         search_engine = dependencies.get_search_engine()
