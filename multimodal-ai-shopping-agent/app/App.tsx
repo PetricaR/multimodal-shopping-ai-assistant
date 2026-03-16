@@ -312,7 +312,7 @@ const SYSTEM_INSTRUCTION = `You are a next-generation AI shopping companion buil
 - Name: Shopping AI Assistant
 - Personality: Enthusiastic, helpful, concise. Never robotic.
 - Opening (first turn only): "Hi! I'm your AI shopping assistant. I can hear you, see images, search products, and build your cart in real time. What can I help you with?"
-- Language: English (switch to Romanian if user speaks Romanian)
+- Language: ALWAYS English. Never switch to any other language, even if the user writes or speaks in Romanian or any other language.
 - Brevity: 1–2 sentences for simple actions, max 3 for complex ones
 - Never read out long lists — summarize: "Found 8 products — best match is X at Y RON"
 
@@ -506,10 +506,13 @@ function App() {
   const isMicEnabledRef = useRef(false);
   const isSoundEnabledRef = useRef(false);
 
+  // Live streaming text shown while agent is responding
+  const [liveAgentText, setLiveAgentText] = useState<string>('');
+
   // Streaming buffers
   const userStreamingTextRef = useRef<string>('');
   const agentStreamingTextRef = useRef<string>('');
-  const textOnlyBufferRef = useRef<string>('');   // Accumulates TEXT modality output (never shown mid-stream)
+  const textOnlyBufferRef = useRef<string>('');   // Accumulates TEXT modality output, streamed live
   const hasAudioTranscriptRef = useRef<boolean>(false); // True when agent is using AUDIO modality
   const lastUIUpdateRef = useRef<number>(0);
   const currentStreamingRole = useRef<'user' | 'agent' | null>(null);
@@ -854,9 +857,14 @@ function App() {
               const timeSinceLastUpdate = now - lastUIUpdateRef.current;
 
               if (timeSinceLastUpdate >= UI_UPDATE_THROTTLE_MS) {
-                // Only stream user speech transcript live; agent text shown only at turnComplete
+                // Stream user speech transcript live
                 if (currentStreamingRole.current === 'user' && userStreamingTextRef.current.trim()) {
                   updateLastChatMessage('user', userStreamingTextRef.current.trim());
+                }
+                // Stream agent text live (text modality — properly spaced)
+                if (textOnlyBufferRef.current) {
+                  const filtered = filterAgentDisplay(textOnlyBufferRef.current).trim();
+                  if (filtered) setLiveAgentText(filtered);
                 }
                 lastUIUpdateRef.current = now;
               }
@@ -877,6 +885,7 @@ function App() {
               textOnlyBufferRef.current = '';
               hasAudioTranscriptRef.current = false;
               currentStreamingRole.current = null;
+              setLiveAgentText('');
               addLog('system', 'INTERRUPTED');
               setAgentState(AgentState.LISTENING);
             }
@@ -907,6 +916,7 @@ function App() {
               hasAudioTranscriptRef.current = false;
               currentStreamingRole.current = null;
               lastUIUpdateRef.current = 0;
+              setLiveAgentText('');
 
               if (!audioPlayerRef.current?.isPlaying) {
                 setAgentState(AgentState.LISTENING);
@@ -925,6 +935,7 @@ function App() {
               agentStreamingTextRef.current = '';
               hasAudioTranscriptRef.current = false;
               currentStreamingRole.current = null;
+              setLiveAgentText('');
 
               for (const call of msg.toolCall.functionCalls) {
                 addLog('agent', `▶️ EXEC: ${call.name}`);
@@ -1560,6 +1571,15 @@ function App() {
             }
             return null;
           })}
+          {/* Live streaming agent message */}
+          {liveAgentText && (
+            <ChatMessage
+              role="agent"
+              text={liveAgentText}
+              timestamp={new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+              isStreaming
+            />
+          )}
           <div ref={chatEndRef} />
         </div>
 
@@ -1577,28 +1597,6 @@ function App() {
             ))}
           </div>
         )}
-
-        {/* New Chat button */}
-        <div className="px-4 pt-2 pb-1 bg-white">
-          <button
-            onClick={() => {
-              setChatHistory([]);
-              setProducts([]);
-              setSearchQueryGroups([]);
-              userStreamingTextRef.current = '';
-              agentStreamingTextRef.current = '';
-              textOnlyBufferRef.current = '';
-              hasAudioTranscriptRef.current = false;
-              currentStreamingRole.current = null;
-            }}
-            className="w-full flex items-center justify-center gap-2 py-2 rounded-xl border border-dashed border-gray-200 text-gray-400 hover:text-blue-600 hover:border-blue-300 hover:bg-blue-50 transition-all text-xs font-medium"
-          >
-            <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-              <path strokeLinecap="round" strokeLinejoin="round" d="M12 4v16m8-8H4" />
-            </svg>
-            New Chat
-          </button>
-        </div>
 
         {/* Input Area */}
         <div className="p-3 bg-white border-t border-gray-100">
@@ -1714,13 +1712,33 @@ function App() {
                       </div>
                     )}
                   </div>
-                  <button
-                    onClick={disconnect}
-                    className="text-[11px] text-gray-400 hover:text-red-500 flex items-center gap-1 transition-colors flex-shrink-0"
-                  >
-                    <span>End</span>
-                    <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg>
-                  </button>
+                  <div className="flex items-center gap-2 flex-shrink-0">
+                    <button
+                      onClick={() => {
+                        setChatHistory([]);
+                        setProducts([]);
+                        setSearchQueryGroups([]);
+                        setLiveAgentText('');
+                        userStreamingTextRef.current = '';
+                        agentStreamingTextRef.current = '';
+                        textOnlyBufferRef.current = '';
+                        hasAudioTranscriptRef.current = false;
+                        currentStreamingRole.current = null;
+                      }}
+                      className="text-[11px] text-gray-400 hover:text-blue-600 flex items-center gap-1 transition-colors"
+                    >
+                      <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M12 4v16m8-8H4" /></svg>
+                      <span>New</span>
+                    </button>
+                    <span className="text-gray-200">|</span>
+                    <button
+                      onClick={disconnect}
+                      className="text-[11px] text-gray-400 hover:text-red-500 flex items-center gap-1 transition-colors"
+                    >
+                      <span>End</span>
+                      <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg>
+                    </button>
+                  </div>
                 </div>
               </div>
             )}
@@ -1869,24 +1887,15 @@ function App() {
               <div className="divide-y divide-gray-100">
                 {cartItems.map((item) => (
                   <div key={item.product_id} className="px-4 py-3 flex gap-3 hover:bg-gray-50 transition-colors">
-                    <div className="w-12 h-12 rounded-lg bg-white border border-gray-100 flex items-center justify-center flex-shrink-0 overflow-hidden">
-                      {item.image_url ? (
-                        <img
-                          src={item.image_url}
-                          alt={item.product_name}
-                          className="w-full h-full object-contain p-0.5"
-                          onError={(e) => {
-                            const target = e.currentTarget;
-                            target.style.display = 'none';
-                            const parent = target.parentElement;
-                            if (parent) {
-                              parent.innerHTML = `<svg class="w-5 h-5 text-gray-300" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z"/></svg>`;
-                            }
-                          }}
-                        />
-                      ) : (
-                        <svg className="w-5 h-5 text-gray-300" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" /></svg>
-                      )}
+                    <div className="w-14 h-14 rounded-xl bg-gray-50 border border-gray-100 flex items-center justify-center flex-shrink-0 overflow-hidden">
+                      <img
+                        src={item.image_url || `https://placehold.co/56x56/f3f4f6/9ca3af?text=${encodeURIComponent(item.product_name.substring(0, 3))}`}
+                        alt={item.product_name}
+                        className="w-full h-full object-contain p-1"
+                        onError={(e) => {
+                          e.currentTarget.src = `https://placehold.co/56x56/f3f4f6/9ca3af?text=${encodeURIComponent(item.product_name.substring(0, 3))}`;
+                        }}
+                      />
                     </div>
                     <div className="flex-1 min-w-0">
                       <p className="text-xs font-medium text-gray-800 line-clamp-2 leading-tight mb-1">{item.product_name}</p>

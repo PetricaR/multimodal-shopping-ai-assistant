@@ -2,7 +2,9 @@
   "permissions": {
     "allow": [
       "Bash(gcloud secrets:*)",
-      "Bash(curl -s \"https://shopping-ai-api-uiuh5wz4wq-ew.a.run.app/api/v1/weather/current?lat=44.43&lon=26.10\" -H \"x-api-key: bringo_secure_shield_2026\")"
+      "Bash(curl -s \"https://shopping-ai-api-uiuh5wz4wq-ew.a.run.app/api/v1/weather/current?lat=44.43&lon=26.10\" -H \"x-api-key: bringo_secure_shield_2026\")",
+      "Bash(npx --yes typescript tsc --noEmit)",
+      "Bash(./node_modules/.bin/tsc --noEmit)"
     ]
   }
 }
