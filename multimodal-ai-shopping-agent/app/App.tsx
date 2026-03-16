@@ -1272,55 +1272,55 @@ function App() {
 
         {/* Header Bar */}
         <div className="h-14 flex items-center px-4 border-b border-gray-100 bg-white gap-2">
-          <div className="w-8 h-8 bg-blue-600 rounded-lg flex items-center justify-center text-sm shadow-sm">
+          <div className="w-8 h-8 bg-blue-600 rounded-lg flex items-center justify-center text-sm shadow-sm flex-shrink-0">
             👨‍🍳
           </div>
           <div className="flex-1 min-w-0">
-            <h1 className="text-sm font-semibold text-gray-900 tracking-tight">Shopping <span className="text-blue-600">AI Assistant</span></h1>
+            <h1 className="text-sm font-semibold text-gray-900 tracking-tight truncate">Shopping <span className="text-blue-600">AI</span></h1>
             {/* Store Selector */}
             <select
               value={selectedStore}
               onChange={(e) => setSelectedStore(e.target.value)}
-              className="mt-0.5 text-[10px] text-gray-600 bg-transparent border-none outline-none cursor-pointer hover:text-blue-600"
+              className="mt-0.5 text-[11px] text-gray-500 bg-gray-50 border border-gray-200 rounded px-1 py-0.5 outline-none cursor-pointer hover:border-blue-300 hover:text-blue-600 transition-colors max-w-full"
             >
-              <option value="carrefour_park_lake">🏬 Carrefour Park Lake</option>
-              <option value="carrefour_mega_mall">🏬 Carrefour Mega Mall</option>
-              <option value="carrefour_plaza_romania">🏬 Carrefour Plaza Romania</option>
-              <option value="carrefour_baneasa">🏬 Carrefour Baneasa</option>
-              <option value="auchan_titan">🏬 Auchan Titan</option>
-              <option value="auchan_militari">🏬 Auchan Militari</option>
-              <option value="mega_image">🏬 Mega Image</option>
+              <option value="carrefour_park_lake">Carrefour Park Lake</option>
+              <option value="carrefour_mega_mall">Carrefour Mega Mall</option>
+              <option value="carrefour_plaza_romania">Carrefour Plaza Romania</option>
+              <option value="carrefour_baneasa">Carrefour Baneasa</option>
+              <option value="auchan_titan">Auchan Titan</option>
+              <option value="auchan_militari">Auchan Militari</option>
+              <option value="mega_image">Mega Image</option>
             </select>
           </div>
-          <Visualizer state={agentState} />
+          <div className="flex-shrink-0">
+            <Visualizer state={agentState} />
+          </div>
           {bringoAuthStatus === 'authenticated' ? (
-            <div className="flex items-center gap-1.5 pl-2 ml-auto border-l border-gray-100">
+            <div className="flex items-center gap-1.5 flex-shrink-0 pl-2 border-l border-gray-100">
               <button
                 onClick={() => setIsProfileOpen(true)}
-                className="flex items-center gap-1.5 px-2 py-1 rounded-full bg-gray-50 border border-gray-200 hover:bg-blue-50 hover:border-blue-100 transition-colors"
+                className="flex items-center gap-1 px-2 py-1 rounded-full bg-gray-50 border border-gray-200 hover:bg-blue-50 hover:border-blue-200 transition-colors"
                 title="My Profile"
               >
-                <span className="text-[10px]">👤</span>
-                <span className="text-[9px] text-gray-600 font-medium">Profile</span>
+                <span className="text-xs">👤</span>
+                <span className="text-[10px] text-gray-600 font-medium">Profile</span>
               </button>
               <button
                 onClick={logout}
-                className="flex items-center gap-1.5 px-2 py-1 rounded-full bg-gray-50 border border-gray-200 hover:bg-red-50 hover:border-red-100 transition-colors group"
-                title="Sign out / Switch Account"
+                className="flex items-center gap-1 px-2 py-1 rounded-full bg-gray-50 border border-gray-200 hover:bg-red-50 hover:border-red-200 transition-colors group"
+                title="Sign out"
               >
                 <div className="w-1.5 h-1.5 rounded-full bg-green-500 group-hover:bg-red-500 transition-colors"></div>
-                <span className="text-[9px] text-gray-600 font-medium group-hover:text-red-700">Sign out</span>
+                <span className="text-[10px] text-gray-600 font-medium group-hover:text-red-600">Out</span>
               </button>
             </div>
           ) : (
-            <div className="ml-auto">
-              <button
-                onClick={() => setCurrentPage('login')}
-                className="text-[9px] text-blue-600 font-bold hover:underline"
-              >
-                SIGN IN
-              </button>
-            </div>
+            <button
+              onClick={() => setCurrentPage('login')}
+              className="flex-shrink-0 text-xs text-white font-medium bg-blue-600 hover:bg-blue-700 px-3 py-1 rounded-full transition-colors"
+            >
+              Sign in
+            </button>
           )}
         </div>
 
@@ -1355,7 +1355,7 @@ function App() {
           )}
 
           {chatHistory.length === 0 && agentState !== AgentState.DISCONNECTED && (
-            <div className="text-center text-gray-400 mt-20">
+            <div className="text-center text-gray-400 flex flex-col items-center justify-center h-full min-h-[180px]">
               <div className="w-12 h-12 mx-auto mb-3 rounded-full bg-blue-50 flex items-center justify-center">
                 <svg className="w-6 h-6 text-blue-500" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z" /></svg>
               </div>
@@ -1431,7 +1431,7 @@ function App() {
                       value={textInput}
                       onChange={(e) => setTextInput(e.target.value)}
                       placeholder="Type a message or send an image..."
-                      className="w-full bg-[#f1f3f4] text-sm p-3 pr-20 rounded-full text-gray-800 focus:bg-white focus:ring-2 focus:ring-blue-500/20 focus:border-blue-300 border border-transparent outline-none placeholder-gray-400 transition-all"
+                      className="w-full bg-[#f1f3f4] text-sm p-3 pr-28 rounded-full text-gray-800 focus:bg-white focus:ring-2 focus:ring-blue-500/30 focus:border-blue-300 border border-transparent outline-none placeholder-gray-400 transition-all"
                     />
                     <div className="absolute right-2 top-1/2 -translate-y-1/2 flex items-center gap-1">
                       {/* Sound Toggle */}
@@ -1451,10 +1451,10 @@ function App() {
                       <button
                         type="button"
                         onClick={() => setIsMicEnabled(!isMicEnabled)}
-                        className={`w-8 h-8 rounded-full flex items-center justify-center transition-all ${isMicEnabled
-                          ? 'bg-red-500 text-white shadow-lg scale-110'
+                        className={`w-8 h-8 rounded-full flex items-center justify-center transition-all flex-shrink-0 ${isMicEnabled
+                          ? 'bg-red-500 text-white shadow-md'
                           : 'bg-gray-200 text-gray-500 hover:bg-gray-300'
-                          } `}
+                          }`}
                         title={isMicEnabled ? "Microphone On" : "Microphone Off"}
                       >
                         {isMicEnabled ? (
@@ -1479,32 +1479,32 @@ function App() {
 
                 {/* Status indicator / Disconnect */}
                 <div className="flex items-center justify-between px-2">
-                  <div className="flex items-center gap-2">
+                  <div className="flex items-center gap-2 min-w-0">
                     {/* Microphone status */}
-                    <div className={`w-1.5 h-1.5 rounded-full ${isMicEnabled ? 'bg-red-500 animate-pulse' : 'bg-gray-400'}`}></div>
-                    <span className="text-[10px] text-gray-500 uppercase tracking-widest font-semibold">
+                    <div className={`w-1.5 h-1.5 rounded-full flex-shrink-0 ${isMicEnabled ? 'bg-red-500 animate-pulse' : 'bg-gray-300'}`}></div>
+                    <span className="text-[11px] text-gray-500 font-medium">
                       {isMicEnabled ? 'Live Audio' : 'Text Only'}
                     </span>
 
                     {/* Agent state indicator */}
                     {agentState === AgentState.SPEAKING && (
-                      <div className="flex items-center gap-1 ml-2 px-2 py-0.5 bg-blue-50 rounded-full">
-                        <div className="w-1 h-1 rounded-full bg-blue-500 animate-pulse"></div>
-                        <span className="text-[9px] text-blue-600 font-semibold">Speaking</span>
+                      <div className="flex items-center gap-1 px-2 py-0.5 bg-blue-50 border border-blue-100 rounded-full">
+                        <div className="w-1.5 h-1.5 rounded-full bg-blue-500 animate-pulse flex-shrink-0"></div>
+                        <span className="text-[10px] text-blue-600 font-semibold">Speaking</span>
                       </div>
                     )}
                     {agentState === AgentState.THINKING && (
-                      <div className="flex items-center gap-1 ml-2 px-2 py-0.5 bg-amber-50 rounded-full">
-                        <div className="w-1 h-1 rounded-full bg-amber-500 animate-pulse"></div>
-                        <span className="text-[9px] text-amber-600 font-semibold">Processing</span>
+                      <div className="flex items-center gap-1 px-2 py-0.5 bg-amber-50 border border-amber-100 rounded-full">
+                        <div className="w-1.5 h-1.5 rounded-full bg-amber-500 animate-pulse flex-shrink-0"></div>
+                        <span className="text-[10px] text-amber-600 font-semibold">Thinking</span>
                       </div>
                     )}
                   </div>
                   <button
                     onClick={disconnect}
-                    className="text-[10px] text-gray-400 hover:text-red-500 flex items-center gap-1 transition-colors"
+                    className="text-[11px] text-gray-400 hover:text-red-500 flex items-center gap-1 transition-colors flex-shrink-0"
                   >
-                    <span>End session</span>
+                    <span>End</span>
                     <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg>
                   </button>
                 </div>

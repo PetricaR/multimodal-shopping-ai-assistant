@@ -12,6 +12,7 @@ from services.search_service import SearchService
 from services.store_service import StoreService
 from api import models
 from api.models import LiveSearchRequest # Import directly for signature
+from security.guardrails import check_input
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/v1/live_search", tags=["live-search"])
@@ -22,6 +23,17 @@ async def live_search(request: LiveSearchRequest):
     Search for products across multiple stores
     """
     try:
+        # --- Guardrails: validate user-supplied queries ---
+        for text in (request.queries or []):
+            guard = await check_input(text)
+            if not guard.allowed:
+                logger.warning(f"Guardrails blocked live_search (reason={guard.reason}): '{text[:80]}'")
+                raise HTTPException(
+                    status_code=400,
+                    detail="Pot să te ajut doar cu produse din catalogul Bringo/Carrefour. Ce produs cauți?",
+                )
+        # --------------------------------------------------
+
         # Determine stores
         stores = request.stores
         if not stores:
