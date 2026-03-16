@@ -55,6 +55,20 @@ import { ProductResultsBlock } from './components/ProductResultsBlock';
 const stripThinking = (text: string): string =>
   text.replace(/<thinking>[\s\S]*?<\/thinking>/gi, '').trim();
 
+/** Remove agent-internal logic patterns from chat display text */
+const filterAgentDisplay = (text: string): string => {
+  let out = text;
+  // Remove fenced code blocks (tool responses, JSON dumps)
+  out = out.replace(/```[\s\S]*?```/g, '');
+  // Remove bare JSON objects/arrays that span a whole "paragraph"
+  out = out.replace(/^\s*[\[\{][\s\S]*?[\]\}]\s*$/gm, '');
+  // Remove lines that are purely internal narration of tool calls
+  out = out.replace(/^.*\b(calling|executing|invoking|running)\s+\w+\s*[\(\{].*/gim, '');
+  // Collapse multiple blank lines
+  out = out.replace(/\n{3,}/g, '\n\n');
+  return out.trim();
+};
+
 // =====================================================================
 // TOOL DEFINITIONS - Following Function Calling Best Practices
 // =====================================================================
@@ -754,9 +768,9 @@ function App() {
                 userStreamingTextRef.current = '';
               }
 
-              // Finalize agent message — strip any leftover thinking blocks
+              // Finalize agent message — strip thinking blocks and internal logic
               if (agentStreamingTextRef.current.trim()) {
-                const finalText = stripThinking(agentStreamingTextRef.current).trim();
+                const finalText = filterAgentDisplay(stripThinking(agentStreamingTextRef.current)).trim();
                 updateLastChatMessage('agent', finalText);
                 addLog('agent', finalText);
                 agentStreamingTextRef.current = '';
@@ -1272,15 +1286,13 @@ function App() {
 
         {/* Header Bar */}
         <div className="h-14 flex items-center px-4 border-b border-gray-100 bg-white gap-2">
-          <div className="w-8 h-8 bg-gradient-to-br from-blue-500 to-blue-700 rounded-lg flex items-center justify-center shadow-sm flex-shrink-0">
-            <svg className="w-4 h-4 text-white" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-              <path d="M12 2L2 7l10 5 10-5-10-5z"/>
-              <path d="M2 17l10 5 10-5"/>
-              <path d="M2 12l10 5 10-5"/>
+          <div className="w-8 h-8 bg-gradient-to-br from-blue-500 to-violet-600 rounded-xl flex items-center justify-center shadow-sm flex-shrink-0">
+            <svg className="w-4 h-4 text-white" viewBox="0 0 24 24" fill="currentColor">
+              <path d="M9.937 15.5A2 2 0 0 0 8.5 14.063l-6.135-1.582a.5.5 0 0 1 0-.962L8.5 9.937A2 2 0 0 0 9.937 8.5l1.582-6.135a.5.5 0 0 1 .963 0L14.063 8.5A2 2 0 0 0 15.5 9.937l6.135 1.581a.5.5 0 0 1 0 .964L15.5 14.063a2 2 0 0 0-1.437 1.437l-1.582 6.135a.5.5 0 0 1-.963 0z"/>
             </svg>
           </div>
           <div className="flex-1 min-w-0">
-            <h1 className="text-sm font-semibold text-gray-900 tracking-tight truncate"><span className="text-blue-600">AI</span> Assistant</h1>
+            <h1 className="text-sm font-semibold text-gray-900 tracking-tight truncate">Shopping <span className="text-blue-600">AI</span></h1>
             {/* Store Selector */}
             <select
               value={selectedStore}

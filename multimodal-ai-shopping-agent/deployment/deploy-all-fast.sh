@@ -5,6 +5,11 @@
 
 set -e
 
+# Resolve project root (one level up from this script's directory)
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+PROJECT_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
+cd "${PROJECT_ROOT}"
+
 PROJECT_ID="formare-ai"
 REGION="europe-west1"
 

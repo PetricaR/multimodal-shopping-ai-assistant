@@ -2,7 +2,20 @@
   "permissions": {
     "allow": [
       "Bash(grep -r \"sidebar\\\\|Sidebar\" /Users/radanpetrica/PFA/hackathons/gemini-live-agent-challange/multimodal-shopping-ai-assistant/multimodal-ai-shopping-agent/app --include=*.tsx --include=*.ts --include=*.css)",
-      "Bash(python3 -c \"import sys,json; d=json.load\\(sys.stdin\\); print\\(d.get\\(''''scripts'''',{}\\)\\)\")"
+      "Bash(python3 -c \"import sys,json; d=json.load\\(sys.stdin\\); print\\(d.get\\(''''scripts'''',{}\\)\\)\")",
+      "Bash(python3 -c \"import sys,json; d=json.load\\(sys.stdin\\); deps={**d.get\\(''''dependencies'''',{}\\), **d.get\\(''''devDependencies'''',{}\\)}; [print\\(k,v\\) for k,v in deps.items\\(\\) if any\\(x in k for x in [''''markdown'''',''''remark'''',''''rehype'''',''''typography'''',''''tailwind'''',''''prose'''']\\)]\")",
+      "Bash(ls /Users/radanpetrica/PFA/hackathons/gemini-live-agent-challange/multimodal-shopping-ai-assistant/multimodal-ai-shopping-agent/app/*.config*)",
+      "Bash(ls /Users/radanpetrica/PFA/hackathons/gemini-live-agent-challange/multimodal-shopping-ai-assistant/multimodal-ai-shopping-agent/app/*.css)",
+      "Bash(npm install:*)",
+      "Bash(python3 -c \"import sys,json; d=json.load\\(sys.stdin\\); print\\(d.get\\(''''dependencies'''',{}\\).get\\(''''tailwindcss'''',''''''''\\), d.get\\(''''devDependencies'''',{}\\).get\\(''''tailwindcss'''',''''''''\\)\\)\")",
+      "Bash(python3 -c \"import json; d=json.load\\(open\\(''package.json''\\)\\); deps={**d.get\\(''dependencies'',{}\\),**d.get\\(''devDependencies'',{}\\)}; [print\\(k,v\\) for k,v in deps.items\\(\\) if ''tailwind'' in k or ''postcss'' in k]\")",
+      "Bash(python3 -c \"import json; d=json.load\\(open\\(''''package.json''''\\)\\); [print\\(k,v\\) for k,v in {**d.get\\(''''dependencies'''',{}\\),**d.get\\(''''devDependencies'''',{}\\)}.items\\(\\)]\")",
+      "Bash(npx tailwindcss:*)",
+      "Bash(npx --yes tailwindcss init -p)",
+      "Bash(ls node_modules/.bin/tailwind*)",
+      "Bash(node -e \"require\\(''tailwindcss''\\)\")",
+      "Bash(node -e \"const tw = require\\(''tailwindcss''\\); console.log\\(tw.version || ''no version''\\); const pkg = require\\(''./node_modules/tailwindcss/package.json''\\); console.log\\(pkg.version\\)\")",
+      "Read(//private/tmp/**)"
     ]
   }
 }
