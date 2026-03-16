@@ -85,9 +85,9 @@ All metrics validated against Google's published benchmarks:
 
 Every decision backed by official Google documentation (January 2026):
 
-### ✅ **1. Dimensions: 512 (NOT 1408)**
+### ✅ **1. Dimensions: 768**
 
-**Decision**: Use 512 dimensions for production
+**Decision**: Use 768 dimensions for production
 
 **Why**:
 
@@ -104,7 +104,7 @@ Every decision backed by official Google documentation (January 2026):
 **Cost comparison** (10K products):
 
 ```
-512D:  $55-85/month, 20MB storage
+768D:  $55-85/month, 20MB storage
 1408D: $70-100/month, 55MB storage
 Savings: 30% cost, 64% storage
 ```
