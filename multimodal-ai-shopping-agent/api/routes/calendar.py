@@ -8,6 +8,7 @@ from functools import partial
 from fastapi import APIRouter
 from datetime import datetime, timedelta, timezone
 import requests
+from config.settings import settings
 
 router = APIRouter(prefix="/api/v1/calendar", tags=["calendar"])
 logger = logging.getLogger(__name__)
@@ -20,7 +21,7 @@ async def get_holidays(days: int = 7):
     Get Romanian public holidays for the next N days.
     """
     try:
-        api_key = os.environ.get("GOOGLE_MAPS_API_KEY")
+        api_key = settings.GOOGLE_MAPS_API_KEY or os.environ.get("GOOGLE_MAPS_API_KEY")
         if not api_key:
             return {"error": "Missing GOOGLE_MAPS_API_KEY"}
 

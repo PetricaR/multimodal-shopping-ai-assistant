@@ -7,6 +7,7 @@ import os
 import logging
 import httpx
 from fastapi import APIRouter, HTTPException, Query
+from config.settings import settings
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/v1/weather", tags=["weather"])
@@ -24,7 +25,7 @@ async def get_current_weather(
     Returns the most recent hour of weather data for the given location.
     Uses Google Maps Weather API (history/hours) to keep the key server-side.
     """
-    api_key = os.environ.get("GOOGLE_MAPS_API_KEY")
+    api_key = settings.GOOGLE_MAPS_API_KEY or os.environ.get("GOOGLE_MAPS_API_KEY")
     if not api_key:
         raise HTTPException(status_code=503, detail="Weather API key not configured")
 
