@@ -63,6 +63,9 @@ COPY ranking ./ranking
 COPY substitution ./substitution
 COPY data ./data
 
+# Copy security module
+COPY security ./security
+
 # Copy API code (changes frequently)
 COPY api ./api
 
