@@ -882,30 +882,7 @@ class CartService:
             logger.error(f"Error updating qty: {e}")
             return {"status": "error", "message": str(e)}
 
-    @staticmethod
-    def clear_cart(phpsessid: str, cookies: Dict[str, str]) -> Dict[str, Any]:
-        """
-        Clear all items from the cart.
-        """
-        try:
-            mapping = CartService.get_cart_items_mapping(phpsessid, cookies)
-            if not mapping:
-                return {"status": "success", "message": "Cart already empty"}
-            
-            logger.info(f"🧹 Clearing {len(mapping)} items from cart")
-            
-            # Remove items in parallel for speed
-            from concurrent.futures import ThreadPoolExecutor
-            with ThreadPoolExecutor(max_workers=5) as executor:
-                list(executor.map(lambda prod_id: CartService.remove_item_from_cart(prod_id, phpsessid, cookies), mapping.keys()))
-                
-            return {
-                "status": "success",
-                "message": f"Removed all items from cart"
-            }
-        except Exception as e:
-            logger.error(f"Error clearing cart: {e}")
-            return {"status": "error", "message": str(e)}
+
 
     @staticmethod
     def get_cart_summary(phpsessid: str, cookies: Dict[str, str]) -> Dict[str, Any]:

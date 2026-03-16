@@ -87,6 +87,10 @@ const mapApiProduct = (p: any): Product => {
         price: typeof p.price === 'string' ? parseFloat(p.price) : (p.price ?? p.price_ron ?? 0),
         images,
         in_stock: p.in_stock !== undefined ? p.in_stock : true,
+        url: p.url || undefined,
+        variant_id: p.variant_id || undefined,
+        store_id: p.store_id || undefined,
+        store_name: p.store_name || undefined,
         ranking_score: p.ranking_score ?? 0,
         similarity_score: p.similarity_score ?? 0,
         gemini_confidence: p.gemini_confidence,
@@ -168,10 +172,6 @@ export const getSystemConfig = async (): Promise<SystemConfig | null> => {
     }
 };
 
-/**
- * Perform Search matching strictly:
- * curl -X 'POST' 'http://localhost:8080/api/v1/search' ... -d '{ "in_stock_only": false, "query_text": "...", "top_k": 20, "use_ranking": true }'
- */
 /**
  * Perform Search matching strictly:
  * curl -X 'POST' 'http://localhost:8080/api/v1/search' ... -d '{ "in_stock_only": false, "query_text": "...", "top_k": 20, "use_ranking": true }'

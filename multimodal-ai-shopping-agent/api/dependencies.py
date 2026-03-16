@@ -81,7 +81,7 @@ def get_feature_server() -> RealTimeFeatureServer:
         _feature_server = RealTimeFeatureServer()
     return _feature_server
 
-def get_authenticated_user():
+async def get_authenticated_user():
     """
     Dependency to verify user is authenticated and session is valid.
 
@@ -117,11 +117,11 @@ def get_authenticated_user():
                 global _session_refresh_lock
                 if _session_refresh_lock:
                     logger.info("⏳ Session refresh already in progress, waiting...")
-                    import time
+                    import asyncio
                     max_wait = 30  # seconds
                     wait_time = 0
                     while _session_refresh_lock and wait_time < max_wait:
-                        time.sleep(0.5)
+                        await asyncio.sleep(0.5)
                         wait_time += 0.5
 
                     # Refresh completed by another request, get updated auth

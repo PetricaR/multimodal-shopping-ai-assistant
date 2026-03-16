@@ -6,6 +6,7 @@ Endpoints for real-time product search
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 from typing import List, Optional, Dict, Any
+import asyncio
 import logging
 
 from services.search_service import SearchService
@@ -39,10 +40,7 @@ async def live_search(request: LiveSearchRequest):
         if not stores:
             if request.address:
                 # Scrape stores from address
-                import asyncio
-                loop = asyncio.get_event_loop()
-                store_result = await loop.run_in_executor(
-                    None,
+                store_result = await asyncio.to_thread(
                     StoreService.scrape_stores_at_address,
                     request.address
                 )
@@ -60,11 +58,7 @@ async def live_search(request: LiveSearchRequest):
              raise HTTPException(status_code=404, detail="No stores found")
 
         # Execute search
-        import asyncio
-        loop = asyncio.get_event_loop()
-        
-        result = await loop.run_in_executor(
-            None,
+        result = await asyncio.to_thread(
             SearchService.search_multi_store,
             request.queries,
             stores

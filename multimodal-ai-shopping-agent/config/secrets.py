@@ -16,7 +16,6 @@ import logging
 import os
 from typing import Optional
 from google.cloud import secretmanager
-from functools import lru_cache
 
 logger = logging.getLogger(__name__)
 
@@ -33,6 +32,8 @@ class SecretManagerClient:
         """
         self.project_id = project_id or os.getenv("GOOGLE_CLOUD_PROJECT", "formare-ai")
         self.client = None
+        self._cache: dict = {}  # {secret_name: (value, timestamp)}
+        self._cache_ttl = 3600  # 1 hour TTL for secret cache
 
     def _get_client(self) -> secretmanager.SecretManagerServiceClient:
         """Lazy load Secret Manager client"""
@@ -45,7 +46,6 @@ class SecretManagerClient:
                 raise
         return self.client
 
-    @lru_cache(maxsize=10)
     def get_secret(self, secret_name: str, version: str = "latest") -> Optional[str]:
         """
         Retrieve a secret from Secret Manager.
@@ -57,8 +57,18 @@ class SecretManagerClient:
         Returns:
             Secret value as string, or None if not found
 
-        Best practice: In production, pin to specific version instead of "latest"
+        Note: Results are cached for 1 hour to avoid excessive API calls.
+              Rotated secrets will be picked up within the TTL window.
         """
+        import time as _time
+
+        # Check cache with TTL
+        cache_key = f"{secret_name}:{version}"
+        if cache_key in self._cache:
+            value, cached_at = self._cache[cache_key]
+            if (_time.time() - cached_at) < self._cache_ttl:
+                return value
+
         try:
             client = self._get_client()
 
@@ -74,6 +84,7 @@ class SecretManagerClient:
             secret_value = response.payload.data.decode("UTF-8")
 
             logger.info(f"✅ Successfully retrieved secret: {secret_name}")
+            self._cache[cache_key] = (secret_value, _time.time())
             return secret_value
 
         except Exception as e:

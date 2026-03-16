@@ -23,7 +23,6 @@ def _setup_python_path():
 _setup_python_path()
 
 # --- 2. Configuration & Imports ---
-# --- 2. Configuration & Imports ---
 from config.settings import settings
 from api.routes import similarity, auth, store, cart, recipes, live_search, user_profile, chef, config, debug, weather, calendar
 

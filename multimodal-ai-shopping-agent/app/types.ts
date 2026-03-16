@@ -7,6 +7,10 @@ export interface Product {
   in_stock?: boolean;
   image_url?: string;
   images?: string[];
+  url?: string;
+  variant_id?: string;
+  store_id?: string;
+  store_name?: string;
   ranking_score?: number;
   similarity_score?: number;
   distance?: number;
