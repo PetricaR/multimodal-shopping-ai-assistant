@@ -112,6 +112,7 @@ class Settings(BaseSettings):
 
     # API Keys
     GOOGLE_API_KEY: Optional[str] = None
+    GOOGLE_MAPS_API_KEY: Optional[str] = None
     
     class Config:
         # Check both root .env and gke-deployment config.env
@@ -129,6 +130,11 @@ def _resolve_settings() -> "Settings":
     secret_key = _fetch_secret(s.PROJECT_ID, "gemini-api-key")
     if secret_key:
         s.GOOGLE_API_KEY = secret_key
+        
+    maps_key = _fetch_secret(s.PROJECT_ID, "GOOGLE_MAPS_API_KEY")
+    if maps_key:
+        s.GOOGLE_MAPS_API_KEY = maps_key
+        
     return s
 
 

@@ -95,6 +95,16 @@ class CartService:
                 variant_id = variant_match.group(1) if variant_match else None
 
             if not variant_id:
+                # Try data attribute on add-to-cart button or form
+                variant_match = re.search(r'data-variant-id="([^"]+)"', html)
+                variant_id = variant_match.group(1) if variant_match else None
+
+            if not variant_id:
+                # Try another common pattern (JSON payload embedded)
+                variant_match = re.search(r'"variantId"\s*:\s*"([^"]+)"', html)
+                variant_id = variant_match.group(1) if variant_match else None
+
+            if not variant_id:
                 return {
                     'status': 'error',
                     'message': 'Variant ID not found on product page',

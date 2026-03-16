@@ -1,0 +1,228 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Shopping AI Assistant - Professional Landscape Architecture</title>
+    <!-- Include Mermaid.js for automated diagrams -->
+    <script src="https://cdn.jsdelivr.net/npm/mermaid@10.9.1/dist/mermaid.min.js"></script>
+    <style>
+        body {
+            font-family: 'Open Sans', -apple-system, BlinkMacSystemFont, Arial, sans-serif;
+            background-color: #f8f9fa;
+            color: #24292e;
+            margin: 0;
+            padding: 20px;
+            height: 100vh;
+            display: flex;
+            flex-direction: column;
+            box-sizing: border-box;
+        }
+
+        .header {
+            text-align: center;
+            margin-bottom: 20px;
+        }
+
+        h1 {
+            color: #1a73e8;
+            font-size: 26px;
+            margin: 0 0 10px 0;
+        }
+
+        p.subtitle {
+            color: #5f6368;
+            font-size: 14px;
+            margin: 0;
+        }
+
+        .container {
+            flex-grow: 1;
+            background: white;
+            border-radius: 12px;
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+            overflow: hidden;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 20px;
+        }
+
+        .mermaid {
+            width: 100%;
+            height: 100%;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+        }
+
+        .mermaid svg {
+            max-width: 100%;
+            max-height: 100%;
+            width: auto;
+            height: auto;
+        }
+    </style>
+</head>
+
+<body>
+
+    <div class="header">
+        <h1>Shopping AI Assistant: Complete Code Architecture</h1>
+        <p class="subtitle">Cloud Native, Real-time Multimodal Agent Architecture (Left-to-Right Flow)</p>
+    </div>
+
+    <div class="container">
+        <div class="mermaid">
+            %%{init: {
+            'theme': 'base',
+            'themeVariables': {
+            'fontFamily': 'arial',
+            'primaryColor': '#ffffff',
+            'primaryTextColor': '#222',
+            'lineColor': '#5f6368'
+            },
+            'flowchart': {
+            'curve': 'basis',
+            'nodeSpacing': 20,
+            'rankSpacing': 60,
+            'padding': 10
+            }
+            }}%%
+            flowchart LR
+            classDef gcpContainer fill:#fff,stroke:#4285F4,stroke-width:2px,stroke-dasharray: 5 5,color:#1a73e8
+            classDef gcpService fill:#E8F0FE,stroke:#1A73E8,stroke-width:2px,color:#1a73e8
+            classDef gcpDatabase fill:#E6F4EA,stroke:#34A853,stroke-width:2px,color:#1e8e3e
+            classDef gcpAI fill:#FCE8E6,stroke:#EA4335,stroke-width:2px,color:#d93025
+            classDef gcpPipeline fill:#FEF7E0,stroke:#FBBC05,stroke-width:2px,color:#b06000
+            classDef clientBrowser fill:#FEF7E0,stroke:#FBBC05,stroke-width:2px,color:#f29900
+            classDef extService fill:#efefef,stroke:#999,stroke-width:1px,color:#555
+            classDef internalModule fill:#f1f3f4,stroke:#dadce0,stroke-width:1px,color:#202124
+
+            %% ==========================================
+            %% CLIENT LAYER (LEFT)
+            %% ==========================================
+            subgraph Client ["🖥️ Presentation (Cloud Run - Vite)"]
+            style Client fill:#ffffff,stroke:#FBBC05,stroke-width:2px
+            UI["⚛️ React UI<br />(Visual Cart, Cards)"]:::clientBrowser
+            WebAudio["🎙️ WebAudio API<br />(PCM Capture & Encode)"]:::clientBrowser
+            end
+
+            %% ==========================================
+            %% BACKEND API & SERVICES (MIDDLE)
+            %% ==========================================
+            subgraph Backend ["⚙️ Core Backend (Cloud Run - FastAPI)"]
+            style Backend fill:#e8f0fe,stroke:#1a73e8,stroke-width:2px
+
+            subgraph Routes ["🚪 API Routers"]
+            R_Auth["/auth"]:::internalModule
+            R_Cart["/cart"]:::internalModule
+            R_Search["/live-search & /similarity"]:::internalModule
+            R_Chef["/chef & /recipes"]:::internalModule
+            R_Context["/weather & /calendar"]:::internalModule
+            end
+
+            subgraph Services ["🛠️ Service Layer"]
+            S_Auth["Auth Service"]:::internalModule
+            S_Cart["Cart Service"]:::internalModule
+            S_Search["Search Service"]:::internalModule
+            S_Chef["Chef & Recipe Service"]:::internalModule
+            S_External["External Data Service"]:::internalModule
+            end
+
+            subgraph Engine ["🧩 Core Engines"]
+            E_Search["Search Engine"]:::internalModule
+            E_Rank["Reranker"]:::internalModule
+            Caches["Redis/LRU Caches"]:::internalModule
+            end
+            end
+
+            %% ==========================================
+            %% AI & MACHINE LEARNING LAYER (TOP RIGHT)
+            %% ==========================================
+            subgraph AI ["🧠 Intelligence Services (Google Cloud)"]
+            style AI fill:#fce8e6,stroke:#ea4335,stroke-width:2px
+            Gemini["🤖 Gemini 2.5 Flash Native Audio"]:::gcpAI
+            VertexSearch["🔍 Vertex AI Vector Search"]:::gcpAI
+            FeatureStore["📊 Vertex AI Feature Store"]:::gcpAI
+            end
+
+            %% ==========================================
+            %% DATA & PERSISTENCE LAYER (BOTTOM RIGHT)
+            %% ==========================================
+            subgraph Data ["🗄️ Persistence & State"]
+            style Data fill:#e6f4ea,stroke:#34a853,stroke-width:2px
+            CloudSQL[("🐘 Cloud SQL (PostgreSQL)<br />+ pgvector")]:::gcpDatabase
+            SecretManager["🔐 Secret Manager"]:::gcpDatabase
+            end
+
+            %% ==========================================
+            %% INGESTION PIPELINE (BOTTOM)
+            %% ==========================================
+            subgraph Pipeline ["⚙️ Pipeline (Cloud Run Job)"]
+            style Pipeline fill:#fdf8e2,stroke:#FBBC05,stroke-width:2px
+            Scraper["🛒 Parallel Scraper"]:::gcpPipeline
+            Embedder["� Embeddings Generator"]:::gcpPipeline
+            IndexManager["🗂️ Vertex Index Manager"]:::gcpPipeline
+            end
+
+            %% External APIs
+            ExtWeather["🌦️ OpenWeatherMap"]:::extService
+
+            %% ==========================================
+            %% CONNECTIONS & FLOWS
+            %% ==========================================
+
+            %% Client Flows
+            WebAudio -->|"Mic/Speaker"| UI
+            UI <-->|"WebSockets (Raw PCM streaming)"| Gemini
+                UI -->|"REST JSON HTTP"| Routes
+
+                %% Routes to Services
+                R_Auth --> S_Auth
+                R_Cart --> S_Cart
+                R_Search --> S_Search
+                R_Chef --> S_Chef
+                R_Context --> S_External
+
+                %% Services to Engines & DB
+                S_Search --> E_Search
+                S_Search --> E_Rank
+                S_Search <--> Caches
+                    S_Chef <--> Caches
+                        S_Cart --> CloudSQL
+                        S_Auth --> CloudSQL
+
+                        %% Engines to AI
+                        E_Search -->|"gRPC Query"| VertexSearch
+                        E_Search -->|"Fetch Features"| FeatureStore
+                        E_Search -->|"SQL Text match fallback"| CloudSQL
+
+                        %% Services to External
+                        S_External --> ExtWeather
+
+                        %% Pipeline Flows
+                        Scraper -->|"Extracts Store Data"| Embedder
+                        Embedder -->|"Generates text embeddings"| IndexManager
+                        IndexManager -->|"Updates endpoint"| VertexSearch
+                        Scraper -->|"Updates relational data"| CloudSQL
+                        Scraper -->|"Pushes features"| FeatureStore
+
+                        %% Secrets
+                        Backend -.->|"Load ENV"| SecretManager
+                        Pipeline -.->|"Load ENV"| SecretManager
+
+        </div>
+    </div>
+
+    <script>
+        mermaid.initialize({
+            startOnLoad: true,
+            securityLevel: 'loose'
+        });
+    </script>
+
+</body>
+
+</html>

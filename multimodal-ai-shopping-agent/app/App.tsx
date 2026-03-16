@@ -967,10 +967,10 @@ function App() {
                     const productName = args.product_name || args.product_id;
                     const providedPrice = args.price; // Price from AI's search results
 
-                    addLog('system', `🛒 ADD TO CART: ${productName} (qty: ${qty}, price: ${providedPrice || '?'})`);
-                    console.log('Adding to cart:', { product_id: args.product_id, quantity: qty, name: productName, price: providedPrice });
+                    addLog('system', `🛒 ADD TO CART: ${productName} (qty: ${qty}, price: ${providedPrice || '?'}, store: ${selectedStore})`);
+                    console.log('Adding to cart:', { product_id: args.product_id, quantity: qty, store: selectedStore, name: productName, price: providedPrice });
 
-                    const data = await addToCart(args.product_id, qty, args.product_url, args.product_name);
+                    const data = await addToCart(args.product_id, qty, selectedStore, args.product_url, args.product_name);
 
                     const addedProduct = data.items_added?.[0] || {};
                     const foundProduct = products.find(p => p.product_id === args.product_id);
@@ -1196,7 +1196,7 @@ function App() {
 
   const handleAddToCart = async (product: Product) => {
     try {
-      await addToCart(product.product_id, 1, undefined, product.product_name);
+      await addToCart(product.product_id, 1, selectedStore, product.url, product.product_name);
       const img = product.image_url || product.images?.[0];
       addItemToLocalCart({
         product_id: product.product_id,

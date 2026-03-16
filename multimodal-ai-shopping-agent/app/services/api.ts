@@ -473,10 +473,11 @@ export const searchByProductName = async (productName: string, topK: number = 20
     }
 };
 
-export const addToCart = async (productId: string, quantity: number, productUrl?: string, productName?: string): Promise<any> => {
+export const addToCart = async (productId: string, quantity: number, storeId: string, productUrl?: string, productName?: string): Promise<any> => {
     const payload = {
         product_id: productId,
         quantity: quantity,
+        store_id: storeId,
         product_url: productUrl,
         product_name: productName
     };

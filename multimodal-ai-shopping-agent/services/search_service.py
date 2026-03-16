@@ -245,8 +245,8 @@ class SearchService:
         
         scored_products = []
         for p in products:
-            name = p.get('name', '').lower()
-            price = p.get('price', 0.0)
+            name = (p.get('name') or p.get('product_name') or '').lower()
+            price = p.get('price') or 0.0
             
             # 1. Base Quality Score
             quality_score = 0.5 # Neutral
