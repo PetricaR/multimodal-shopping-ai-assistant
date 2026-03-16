@@ -477,6 +477,8 @@ function App() {
   // Streaming buffers
   const userStreamingTextRef = useRef<string>('');
   const agentStreamingTextRef = useRef<string>('');
+  const textOnlyBufferRef = useRef<string>('');   // Accumulates TEXT modality output (never shown mid-stream)
+  const hasAudioTranscriptRef = useRef<boolean>(false); // True when agent is using AUDIO modality
   const lastUIUpdateRef = useRef<number>(0);
   const currentStreamingRole = useRef<'user' | 'agent' | null>(null);
   const UI_UPDATE_THROTTLE_MS = 100; // Update UI every 100ms for smoother streaming
@@ -793,10 +795,11 @@ function App() {
               hasUpdates = true;
             }
 
-            // Agent speech transcript (AUDIO modality)
+            // Agent speech transcript (AUDIO modality) — this IS the real response, stream it live
             if (msg.serverContent?.outputTranscription?.text) {
               const newText = stripThinking(msg.serverContent.outputTranscription.text);
               agentStreamingTextRef.current += newText;
+              hasAudioTranscriptRef.current = true;
 
               if (currentStreamingRole.current !== 'agent') {
                 currentStreamingRole.current = 'agent';
@@ -805,15 +808,12 @@ function App() {
               hasUpdates = true;
             }
 
-            // Agent text response (TEXT modality)
+            // Agent text response (TEXT modality) — accumulate only, never render mid-stream
+            // (may contain tool narration / thinking; shown only at turnComplete if no audio)
             if (msg.serverContent?.modelTurn?.parts) {
               for (const part of msg.serverContent.modelTurn.parts) {
                 if (part.text) {
-                  agentStreamingTextRef.current += stripThinking(part.text);
-                  if (currentStreamingRole.current !== 'agent') {
-                    currentStreamingRole.current = 'agent';
-                    addChatMessage('agent', agentStreamingTextRef.current);
-                  }
+                  textOnlyBufferRef.current += stripThinking(part.text);
                   hasUpdates = true;
                 }
               }
@@ -826,7 +826,7 @@ function App() {
               audioPlayerRef.current?.playChunk(audioData);
             }
 
-            // Update UI (throttled for smooth streaming)
+            // Update UI (throttled for smooth streaming) — only update user and audio-transcript agent messages
             if (hasUpdates) {
               const now = Date.now();
               const timeSinceLastUpdate = now - lastUIUpdateRef.current;
@@ -835,8 +835,9 @@ function App() {
                 if (currentStreamingRole.current === 'user' && userStreamingTextRef.current.trim()) {
                   updateLastChatMessage('user', userStreamingTextRef.current.trim());
                 }
-                if (currentStreamingRole.current === 'agent' && agentStreamingTextRef.current.trim()) {
-                  updateLastChatMessage('agent', filterAgentDisplay(stripThinking(agentStreamingTextRef.current)).trim());
+                // Audio transcript: update live (real spoken content)
+                if (hasAudioTranscriptRef.current && currentStreamingRole.current === 'agent' && agentStreamingTextRef.current.trim()) {
+                  updateLastChatMessage('agent', agentStreamingTextRef.current.trim());
                 }
                 lastUIUpdateRef.current = now;
               }
@@ -854,6 +855,8 @@ function App() {
               }
 
               agentStreamingTextRef.current = '';
+              textOnlyBufferRef.current = '';
+              hasAudioTranscriptRef.current = false;
               currentStreamingRole.current = null;
               addLog('system', 'INTERRUPTED');
               setAgentState(AgentState.LISTENING);
@@ -868,14 +871,24 @@ function App() {
                 userStreamingTextRef.current = '';
               }
 
-              // Finalize agent message — strip thinking blocks and internal logic
-              if (agentStreamingTextRef.current.trim()) {
-                const finalText = filterAgentDisplay(stripThinking(agentStreamingTextRef.current)).trim();
-                updateLastChatMessage('agent', finalText);
-                addLog('agent', finalText);
-                agentStreamingTextRef.current = '';
+              if (hasAudioTranscriptRef.current) {
+                // AUDIO mode: finalize the live transcript that's already in chat
+                if (agentStreamingTextRef.current.trim()) {
+                  updateLastChatMessage('agent', agentStreamingTextRef.current.trim());
+                  addLog('agent', agentStreamingTextRef.current.trim());
+                }
+              } else {
+                // TEXT-only mode: now safe to show the full response (tool narration discarded on toolCall)
+                const finalText = filterAgentDisplay(textOnlyBufferRef.current).trim();
+                if (finalText) {
+                  addChatMessage('agent', finalText);
+                  addLog('agent', finalText);
+                }
               }
 
+              agentStreamingTextRef.current = '';
+              textOnlyBufferRef.current = '';
+              hasAudioTranscriptRef.current = false;
               currentStreamingRole.current = null;
               lastUIUpdateRef.current = 0;
 
@@ -890,6 +903,12 @@ function App() {
               const toolNames = msg.toolCall.functionCalls?.map(c => c.name).join(', ');
               addLog('system', `🔧 TOOL CALL: ${toolNames}`);
               console.log('Tool calls received:', msg.toolCall.functionCalls);
+
+              // Discard any pre-tool narration ("Let me search for...", "I'll use the tool...")
+              textOnlyBufferRef.current = '';
+              agentStreamingTextRef.current = '';
+              hasAudioTranscriptRef.current = false;
+              currentStreamingRole.current = null;
 
               for (const call of msg.toolCall.functionCalls) {
                 addLog('agent', `▶️ EXEC: ${call.name}`);
@@ -1473,7 +1492,7 @@ function App() {
         </div>
 
         {/* Chat Messages */}
-        <div className="flex-1 overflow-y-auto px-4 py-3 space-y-3 bg-[#f8f9fa]">
+        <div className="flex-1 min-h-0 overflow-y-auto px-4 py-4 space-y-4 bg-[#f8f9fa]">
           {/* Microphone disabled warning */}
           {!isMicEnabled && agentState !== AgentState.DISCONNECTED && (
             <div className="mx-auto max-w-md mt-4">
