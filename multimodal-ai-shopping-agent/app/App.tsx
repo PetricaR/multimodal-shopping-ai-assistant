@@ -1523,25 +1523,6 @@ function App() {
             if (entry.type === 'text') {
               return <ChatMessage key={entry.id} role={entry.role} text={entry.text} timestamp={entry.timestamp} />;
             }
-            if (entry.type === 'product_results') {
-              return (
-                <ProductResultsBlock
-                  key={entry.id}
-                  queryGroups={entry.queryGroups}
-                  isSubstitution={entry.isSubstitution}
-                  cartItems={cartItems}
-                  onAddToCart={handleAddToCart}
-                  onIncrementQuantity={(productId, productName) => {
-                    const item = cartItems.find(i => i.product_id === productId);
-                    handleUpdateQuantity(productId, productName, (item?.quantity || 0) + 1);
-                  }}
-                  onDecrementQuantity={(productId, productName) => {
-                    const item = cartItems.find(i => i.product_id === productId);
-                    handleUpdateQuantity(productId, productName, (item?.quantity || 1) - 1);
-                  }}
-                />
-              );
-            }
             return null;
           })}
           <div ref={chatEndRef} />

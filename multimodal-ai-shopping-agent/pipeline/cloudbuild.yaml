@@ -1,0 +1,55 @@
+# Cloud Build configuration for Bringo Full Pipeline
+# Project: formare-ai
+#
+# Usage:
+#   gcloud builds submit --config=pipeline/cloudbuild.yaml .
+
+steps:
+  # Build the container image using Dockerfile from pipeline/
+  - name: "gcr.io/cloud-builders/docker"
+    args:
+      - "build"
+      - "-t"
+      - "gcr.io/$PROJECT_ID/bringo-parallel-scraper"
+      - "-f"
+      - "pipeline/Dockerfile"
+      - "."
+
+  # Push to Container Registry
+  - name: "gcr.io/cloud-builders/docker"
+    args:
+      - "push"
+      - "gcr.io/$PROJECT_ID/bringo-parallel-scraper"
+
+  # Deploy as Cloud Run Job (create or update)
+  - name: "gcr.io/google.com/cloudsdktool/cloud-sdk"
+    entrypoint: "bash"
+    args:
+      - "-c"
+      - |
+        gcloud run jobs create bringo-parallel-scraper \
+          --image=gcr.io/$PROJECT_ID/bringo-parallel-scraper \
+          --region=europe-west1 \
+          --memory=8Gi \
+          --cpu=4 \
+          --timeout=14400 \
+          --max-retries=1 \
+          --set-env-vars=GOOGLE_CLOUD_PROJECT=$PROJECT_ID,BRINGO_STORE=carrefour_park_lake \
+          --service-account=bringo-pipeline@$PROJECT_ID.iam.gserviceaccount.com \
+        || gcloud run jobs update bringo-parallel-scraper \
+          --image=gcr.io/$PROJECT_ID/bringo-parallel-scraper \
+          --region=europe-west1 \
+          --memory=8Gi \
+          --cpu=4 \
+          --timeout=14400 \
+          --max-retries=1 \
+          --set-env-vars=GOOGLE_CLOUD_PROJECT=$PROJECT_ID,BRINGO_STORE=carrefour_park_lake \
+          --service-account=bringo-pipeline@$PROJECT_ID.iam.gserviceaccount.com
+
+images:
+  - "gcr.io/$PROJECT_ID/bringo-parallel-scraper"
+
+options:
+  logging: CLOUD_LOGGING_ONLY
+
+timeout: "1800s" # 30 minutes for build
