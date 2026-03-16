@@ -1,4 +1,6 @@
 import React from 'react';
+import ReactMarkdown from 'react-markdown';
+import remarkGfm from 'remark-gfm';
 
 interface ChatMessageProps {
   role: 'user' | 'agent';
@@ -6,53 +8,6 @@ interface ChatMessageProps {
   timestamp: string;
   isStreaming?: boolean;
 }
-
-/** Handle inline bold/italic formatting.
- * NOTE: Nested bold+italic (e.g. **bold *italic***) is not supported — only top-level bold or italic.
- */
-const renderInline = (text: string): React.ReactNode => {
-  const parts = text.split(/(\*\*[^*]+\*\*)/g);
-  return parts.map((part, i) => {
-    if (part.startsWith('**') && part.endsWith('**')) {
-      return <strong key={i} className="font-semibold">{part.slice(2, -2)}</strong>;
-    }
-    const italic = part.split(/(\*[^*]+\*|_[^_]+_)/g);
-    return italic.map((p, j) => {
-      if ((p.startsWith('*') && p.endsWith('*')) || (p.startsWith('_') && p.endsWith('_'))) {
-        return <em key={j}>{p.slice(1, -1)}</em>;
-      }
-      return <React.Fragment key={j}>{p}</React.Fragment>;
-    });
-  });
-};
-
-/** Convert plain text with line breaks into React elements */
-const renderText = (text: string) => {
-  const lines = text.split('\n');
-  return lines.map((line, i) => {
-    if (!line.trim()) return <div key={i} className="h-1" />;
-    if (/^[-•*]\s/.test(line)) {
-      return (
-        <div key={i} className="flex gap-2 my-0.5 leading-relaxed">
-          <span className="text-blue-500 flex-shrink-0 mt-px">•</span>
-          <span>{renderInline(line.replace(/^[-•*]\s/, ''))}</span>
-        </div>
-      );
-    }
-    if (/^\d+\.\s/.test(line)) {
-      const match = line.match(/^(\d+)\.\s(.*)/);
-      if (match) {
-        return (
-          <div key={i} className="flex gap-2 my-0.5 leading-relaxed">
-            <span className="text-blue-500 flex-shrink-0 font-medium min-w-[1.2rem] text-right mt-px">{match[1]}.</span>
-            <span>{renderInline(match[2])}</span>
-          </div>
-        );
-      }
-    }
-    return <p key={i} className="my-0.5 leading-relaxed">{renderInline(line)}</p>;
-  });
-};
 
 export const ChatMessage: React.FC<ChatMessageProps> = ({ role, text, timestamp, isStreaming = false }) => {
   const isUser = role === 'user';
@@ -85,9 +40,15 @@ export const ChatMessage: React.FC<ChatMessageProps> = ({ role, text, timestamp,
           <span className="text-[10px] font-semibold text-gray-500">Shopping AI</span>
           <span className="text-[10px] text-gray-400">{timestamp}</span>
         </div>
-        <div className="bg-white text-gray-800 rounded-2xl rounded-tl-sm px-4 py-2.5 text-sm leading-relaxed border border-gray-100 shadow-sm break-words">
-          {renderText(text)}
-          {isStreaming && <span className="inline-block w-0.5 h-3.5 bg-blue-500 ml-0.5 animate-pulse align-middle" />}
+        <div className="bg-white text-gray-800 rounded-2xl rounded-tl-sm px-4 py-2.5 text-sm leading-relaxed border border-gray-100 shadow-sm break-words relative pb-4">
+          <div className="markdown-body prose prose-sm prose-blue max-w-none">
+            <ReactMarkdown remarkPlugins={[remarkGfm]}>
+              {text}
+            </ReactMarkdown>
+          </div>
+          {isStreaming && (
+            <span className="absolute bottom-2 right-4 inline-block w-1 h-3 bg-blue-500 animate-pulse border border-blue-400 shadow-[0_0_8px_rgba(59,130,246,0.6)]" />
+          )}
         </div>
       </div>
     </div>
