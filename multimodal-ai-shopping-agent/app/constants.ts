@@ -1,7 +1,5 @@
-// API Configuration
-// Reverted to original IP address as requested
-export const API_BASE_URL = "http://34.78.177.35/api/v1";
-export const API_KEY = "bringo_secure_shield_2026";
+// API Configuration is in services/api.ts (uses VITE_API_URL env var)
+// Do NOT define API_BASE_URL or API_KEY here — they are managed centrally in api.ts
 
 // Matches Streamlit "Generic Baskets" structure
 export const DEFAULT_BASKET = [

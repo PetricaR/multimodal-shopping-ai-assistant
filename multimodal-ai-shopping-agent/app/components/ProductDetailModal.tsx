@@ -110,6 +110,20 @@ export const ProductDetailModal: React.FC<ProductDetailModalProps> = ({
             <span className="text-[10px] font-mono tracking-widest text-blue-400/70 uppercase">{product.producer}</span>
           )}
           <h2 className="text-white font-semibold text-base leading-snug">{product.product_name}</h2>
+          {product.url && (
+            <a
+              href={product.url}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="inline-flex items-center gap-1 text-[11px] text-blue-400 hover:text-blue-300 transition-colors mt-1"
+              onClick={(e) => e.stopPropagation()}
+            >
+              <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
+              </svg>
+              View on Bringo
+            </a>
+          )}
           {product.category && (
             <span className="inline-block text-[10px] text-gray-400 bg-white/5 px-2 py-0.5 rounded-full">{product.category}</span>
           )}
@@ -121,7 +135,7 @@ export const ProductDetailModal: React.FC<ProductDetailModalProps> = ({
           <div className="flex items-center justify-between pt-3 border-t border-white/10">
             <div>
               <div className="flex items-baseline gap-1">
-                <span className="text-2xl font-bold text-white tracking-tight">{product.price.toFixed(2)}</span>
+                <span className="text-2xl font-bold text-white tracking-tight">{(product.price ?? 0).toFixed(2)}</span>
                 <span className="text-xs text-gray-400 font-semibold">RON</span>
               </div>
               {isSubstitution && product.price_difference !== undefined && (

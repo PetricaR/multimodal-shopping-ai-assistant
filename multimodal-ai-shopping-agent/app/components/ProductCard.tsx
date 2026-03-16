@@ -122,7 +122,7 @@ export const ProductCard: React.FC<ProductCardProps> = ({
         <div className="pt-4 mt-auto border-t border-white/5 flex items-center justify-between">
           <div className="flex flex-col">
             <div className="flex items-baseline gap-1">
-              <span className="text-xl font-bold text-white tracking-tight">{product.price.toFixed(2)}</span>
+              <span className="text-xl font-bold text-white tracking-tight">{(product.price ?? 0).toFixed(2)}</span>
               <span className="text-[10px] text-gray-400 font-bold uppercase">RON</span>
             </div>
             {isSubstitution && product.price_difference !== undefined && (
@@ -173,8 +173,8 @@ export const ProductCard: React.FC<ProductCardProps> = ({
               disabled={product.in_stock === false}
               onClick={() => onAddToCart?.(product)}
               className={`w-10 h-10 rounded-xl flex items-center justify-center shadow-lg transition-all active:scale-95 ${product.in_stock === false
-                  ? 'bg-gray-800 text-gray-500 cursor-not-allowed'
-                  : 'bg-blue-600 hover:bg-blue-500 text-white shadow-blue-900/40'
+                ? 'bg-gray-800 text-gray-500 cursor-not-allowed'
+                : 'bg-blue-600 hover:bg-blue-500 text-white shadow-blue-900/40'
                 }`}
               title="Adaugă în coș"
             >

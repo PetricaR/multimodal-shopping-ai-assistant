@@ -170,7 +170,23 @@ async def check_input(raw_text: str) -> GuardResult:
 
 
 # Convenience: synchronous wrapper for non-async callers
-# (uses asyncio.run — only safe outside an existing event loop)
+# WARNING: Only safe when called OUTSIDE a running event loop (e.g. CLI scripts).
+# Do NOT call this from FastAPI handlers — use `await check_input(...)` instead.
 def check_input_sync(raw_text: str) -> GuardResult:
     import asyncio
-    return asyncio.run(check_input(raw_text))
+    try:
+        loop = asyncio.get_running_loop()
+        # We're inside an event loop — asyncio.run() would crash.
+        # Log a warning and fail open with a regex-only check.
+        import logging
+        logging.getLogger(__name__).warning(
+            "check_input_sync called inside a running event loop. "
+            "Use 'await check_input(...)' instead. Falling back to regex-only check."
+        )
+        clean = sanitize_input(raw_text)
+        if not _regex_check(clean):
+            return GuardResult(allowed=False, reason="regex")
+        return GuardResult(allowed=True, reason="ok_sync_fallback", sanitized=clean)
+    except RuntimeError:
+        # No running loop — safe to use asyncio.run()
+        return asyncio.run(check_input(raw_text))

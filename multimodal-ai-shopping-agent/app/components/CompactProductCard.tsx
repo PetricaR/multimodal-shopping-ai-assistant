@@ -60,7 +60,7 @@ export const CompactProductCard: React.FC<CompactProductCardProps> = ({
         </h4>
         <div className="flex items-center justify-between">
           <div>
-            <span className="text-sm font-bold text-white">{product.price.toFixed(2)}</span>
+            <span className="text-sm font-bold text-white">{(product.price ?? 0).toFixed(2)}</span>
             <span className="text-[8px] text-gray-400 ml-0.5">RON</span>
           </div>
           {cartQuantity > 0 ? (

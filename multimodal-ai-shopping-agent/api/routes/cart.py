@@ -6,6 +6,7 @@ Endpoints for managing the shopping cart
 from fastapi import APIRouter, HTTPException, Depends
 from pydantic import BaseModel
 from typing import Optional, List, Dict, Any
+import asyncio
 import logging
 
 from services.cart_service import CartService
@@ -61,11 +62,7 @@ async def add_item(request: models.CartItemRequest, auth: Dict[str, Any] = Depen
             product_url = f"{settings.BRINGO_BASE_URL}/ro/{store_id}/products/product-{request.product_id}"
 
         # Blocking operation in thread pool
-        import asyncio
-        loop = asyncio.get_event_loop()
-
-        result = await loop.run_in_executor(
-            None,
+        result = await asyncio.to_thread(
             CartService.add_product_optimized,
             request.product_id,
             store_id,
@@ -120,11 +117,7 @@ async def add_items_batch(request: models.CartBatchRequest, auth: Dict[str, Any]
             for item in request.items
         ]
 
-        import asyncio
-        loop = asyncio.get_event_loop()
-
-        result = await loop.run_in_executor(
-            None,
+        result = await asyncio.to_thread(
             CartService.add_products_batch,
             items,
             store_id,
@@ -153,11 +146,7 @@ async def delete_item(product_id: str, auth: Dict[str, Any] = Depends(dependenci
         cookies = {'PHPSESSID': auth.get("session_cookie")}
         phpsessid = auth.get("session_cookie")
         
-        import asyncio
-        loop = asyncio.get_event_loop()
-
-        result = await loop.run_in_executor(
-            None,
+        result = await asyncio.to_thread(
             CartService.remove_item_from_cart,
             product_id,
             phpsessid,
@@ -184,11 +173,7 @@ async def update_item_qty(product_id: str, request: models.CartItemRequest, auth
         cookies = {'PHPSESSID': auth.get("session_cookie")}
         phpsessid = auth.get("session_cookie")
         
-        import asyncio
-        loop = asyncio.get_event_loop()
-
-        result = await loop.run_in_executor(
-            None,
+        result = await asyncio.to_thread(
             CartService.update_item_quantity,
             product_id,
             request.quantity,
@@ -217,11 +202,7 @@ async def clear_cart_endpoint(auth: Dict[str, Any] = Depends(dependencies.get_au
         cookies = {'PHPSESSID': auth.get("session_cookie")}
         phpsessid = auth.get("session_cookie")
         
-        import asyncio
-        loop = asyncio.get_event_loop()
-
-        result = await loop.run_in_executor(
-            None,
+        result = await asyncio.to_thread(
             CartService.clear_cart,
             phpsessid,
             cookies

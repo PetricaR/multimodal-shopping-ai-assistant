@@ -181,8 +181,8 @@ async def search_similar_products(request: SearchRequest):
                 # Wrap blocking sync call in executor
                 q_candidates = await loop.run_in_executor(
                     None,
-                    lambda: search_engine.search_by_text(
-                        query_text=q,
+                    lambda _q=q: search_engine.search_by_text(
+                        query_text=_q,
                         num_neighbors=150,
                         filter_in_stock=request.in_stock_only
                     )
