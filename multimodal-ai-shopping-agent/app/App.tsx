@@ -383,11 +383,24 @@ const SUGGESTIONS = [
   "Show me vegetarian products"
 ];
 
-interface ChatMessage {
+// Discriminated union chat entry types (mirrors text-prod)
+interface TextChatEntry {
+  id: string;
+  type: 'text';
   role: 'user' | 'agent';
   text: string;
   timestamp: string;
 }
+
+interface ProductChatEntry {
+  id: string;
+  type: 'product_results';
+  queryGroups: { query: string; products: Product[] }[];
+  isSubstitution: boolean;
+  timestamp: string;
+}
+
+type ChatEntry = TextChatEntry | ProductChatEntry;
 
 interface CartItem {
   product_id: string;
@@ -427,7 +440,7 @@ function App() {
   const [apiKey, setApiKey] = useState<string>('');
   const [products, setProducts] = useState<Product[]>([]);
   const [isSubstitutionMode, setIsSubstitutionMode] = useState<boolean>(false);
-  const [chatHistory, setChatHistory] = useState<ChatMessage[]>([]);
+  const [chatHistory, setChatHistory] = useState<ChatEntry[]>([]);
   const [logs, setLogs] = useState<LogMessage[]>([]);
   const [agentState, setAgentState] = useState<AgentState>(AgentState.DISCONNECTED);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
@@ -567,18 +580,37 @@ function App() {
   };
 
   const addChatMessage = (role: 'user' | 'agent', text: string) => {
-    setChatHistory(prev => [...prev, { role, text, timestamp: new Date().toLocaleTimeString() }]);
+    const entry: TextChatEntry = {
+      id: `msg-${Date.now()}-${Math.random().toString(36).substr(2, 5)}`,
+      type: 'text',
+      role,
+      text,
+      timestamp: new Date().toLocaleTimeString(),
+    };
+    setChatHistory(prev => [...prev, entry]);
+  };
+
+  const addProductResults = (queryGroups: { query: string; products: Product[] }[], isSubstitution: boolean) => {
+    const entry: ProductChatEntry = {
+      id: `products-${Date.now()}`,
+      type: 'product_results',
+      queryGroups,
+      isSubstitution,
+      timestamp: new Date().toLocaleTimeString(),
+    };
+    setChatHistory(prev => [...prev, entry]);
   };
 
   const updateLastChatMessage = (role: 'user' | 'agent', text: string) => {
     setChatHistory(prev => {
-      const lastIndex = prev.length - 1;
-      if (lastIndex >= 0 && prev[lastIndex].role === role) {
-        const updated = [...prev];
-        updated[lastIndex] = { ...updated[lastIndex], text };
-        return updated;
+      for (let i = prev.length - 1; i >= 0; i--) {
+        const entry = prev[i];
+        if (entry.type === 'text' && entry.role === role) {
+          const updated = [...prev];
+          updated[i] = { ...entry, text };
+          return updated;
+        }
       }
-      // Don't add new message if no match - only update existing
       return prev;
     });
   };
@@ -868,17 +900,28 @@ function App() {
                   // Execute tool calls
                   if (call.name === 'find_shopping_items') {
                     const args = call.args as any;
-                    const uniqueProducts = await searchProducts(args.queries, args.multi_store || false, args.limit || 12);
-                    setProducts(uniqueProducts);
+                    const queries: string[] = Array.isArray(args.queries) ? args.queries : [args.queries || args.query_text || ''];
+                    const limit = args.limit || 8;
+                    const multiStore = args.multi_store || false;
+                    // Search per-query to preserve grouping for display
+                    const queryGroups: { query: string; products: Product[] }[] = [];
+                    for (const q of queries) {
+                      const qProducts = await searchProducts([q], multiStore, limit);
+                      queryGroups.push({ query: q, products: qProducts });
+                    }
+                    const allProducts = queryGroups.flatMap(g => g.products);
+                    setProducts(allProducts);
                     setIsSubstitutionMode(false);
-                    addLog('system', `FOUND ${uniqueProducts.length} products`);
-                    result = { products: uniqueProducts.map(p => ({ id: p.product_id, name: p.product_name, price: p.price, store: p.producer })) };
+                    addProductResults(queryGroups, false);
+                    addLog('system', `FOUND ${allProducts.length} products across ${queries.length} queries`);
+                    result = { products: allProducts.map(p => ({ id: p.product_id, name: p.product_name, price: p.price, store: p.producer })) };
                   }
                   else if (call.name === 'suggest_substitution') {
                     const args = call.args as any;
                     const data = await searchByProductName(args.product_name, 10);
                     setProducts(data);
                     setIsSubstitutionMode(true);
+                    addProductResults([{ query: args.product_name, products: data }], true);
                     result = { substitutions: data.map(p => ({ id: p.product_id, name: p.product_name, price: p.price })) };
                   }
                   else if (call.name === 'add_to_cart') {
@@ -1476,9 +1519,31 @@ function App() {
               )}
             </div>
           )}
-          {chatHistory.map((msg, idx) => (
-            <ChatMessage key={idx} role={msg.role} text={msg.text} timestamp={msg.timestamp} />
-          ))}
+          {chatHistory.map((entry) => {
+            if (entry.type === 'text') {
+              return <ChatMessage key={entry.id} role={entry.role} text={entry.text} timestamp={entry.timestamp} />;
+            }
+            if (entry.type === 'product_results') {
+              return (
+                <ProductResultsBlock
+                  key={entry.id}
+                  queryGroups={entry.queryGroups}
+                  isSubstitution={entry.isSubstitution}
+                  cartItems={cartItems}
+                  onAddToCart={handleAddToCart}
+                  onIncrementQuantity={(productId, productName) => {
+                    const item = cartItems.find(i => i.product_id === productId);
+                    handleUpdateQuantity(productId, productName, (item?.quantity || 0) + 1);
+                  }}
+                  onDecrementQuantity={(productId, productName) => {
+                    const item = cartItems.find(i => i.product_id === productId);
+                    handleUpdateQuantity(productId, productName, (item?.quantity || 1) - 1);
+                  }}
+                />
+              );
+            }
+            return null;
+          })}
           <div ref={chatEndRef} />
         </div>
 
