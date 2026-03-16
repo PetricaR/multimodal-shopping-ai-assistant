@@ -58,14 +58,35 @@ const stripThinking = (text: string): string =>
 /** Remove agent-internal logic patterns from chat display text */
 const filterAgentDisplay = (text: string): string => {
   let out = text;
-  // Remove fenced code blocks (tool responses, JSON dumps)
+
+  // 1. Strip fenced code blocks (JSON tool args, etc.)
   out = out.replace(/```[\s\S]*?```/g, '');
-  // Remove bare JSON objects/arrays that span a whole "paragraph"
+
+  // 2. Strip markdown headings entirely (agent should never use them)
+  out = out.replace(/^#{1,6}\s+.+$/gm, '');
+
+  // 3. Strip inline backtick code (tool names, params — always technical)
+  out = out.replace(/`[^`]+`/g, '');
+
+  // 4. Strip sentences/lines describing tool employment
+  out = out.replace(/[^.!?\n]*\b(employ|use|call|invoke|execute|trigger|utilize)\s+the\s+\w[\w_]*\s+tool[^.!?\n]*/gi, '');
+  out = out.replace(/[^.!?\n]*\b(I(?:'ve| have| will|'ll| am|'m))\s+(?:decided to |going to |now |about to )?(?:employ|use|call|invoke|execute|run|trigger)\s+\w[\w_]*[^.!?\n]*/gi, '');
+
+  // 5. Strip lines describing parameter configuration
+  out = out.replace(/^[^.!?\n]*\b(configured?|set|specified|passed|included)\s+the\s+`?\w+`?\s*(parameter|param|argument|arg|query|value)[^.!?\n]*$/gim, '');
+
+  // 6. Strip lines about limits/settings for a search
+  out = out.replace(/^[^.!?\n]*\b(set|setting)\s+(a\s+)?limit\s+of\s+\d+[^.!?\n]*$/gim, '');
+
+  // 7. Strip bare JSON objects/arrays
   out = out.replace(/^\s*[\[\{][\s\S]*?[\]\}]\s*$/gm, '');
-  // Remove lines that are purely internal narration of tool calls
-  out = out.replace(/^.*\b(calling|executing|invoking|running)\s+\w+\s*[\(\{].*/gim, '');
-  // Collapse multiple blank lines
+
+  // 8. Ensure space after punctuation that got concatenated (e.g. "Got it!For")
+  out = out.replace(/([.!?])([A-Z])/g, '$1 $2');
+
+  // 9. Collapse multiple blank lines
   out = out.replace(/\n{3,}/g, '\n\n');
+
   return out.trim();
 };
 
@@ -241,12 +262,12 @@ const manageUserProfileTool: FunctionDeclaration = {
 // SYSTEM INSTRUCTION - Optimized for Romanian Voice Interaction
 // =====================================================================
 
-const SYSTEM_INSTRUCTION = `You are MIA — Multimodal Intelligence Assistant — a next-generation AI shopping companion built on Google Gemini. You are warm, fast, proactive, and smart. You speak naturally like a knowledgeable friend who loves food and smart shopping.
+const SYSTEM_INSTRUCTION = `You are a next-generation AI shopping companion built on Google Gemini. You are warm, fast, proactive, and smart. You speak naturally like a knowledgeable friend who loves food and smart shopping.
 
 # PERSONA & VOICE
-- Name: MIA (Multimodal Intelligence Assistant)
+- Name: Shopping AI Assistant
 - Personality: Enthusiastic, helpful, concise. Never robotic.
-- Opening (first turn only): "Hi! I'm Mia, your AI shopping assistant. I can hear you, see images, search products, and build your cart in real time. What can I help you with?"
+- Opening (first turn only): "Hi! I'm your AI shopping assistant. I can hear you, see images, search products, and build your cart in real time. What can I help you with?"
 - Language: English (switch to Romanian if user speaks Romanian)
 - Brevity: 1–2 sentences for simple actions, max 3 for complex ones
 - Never read out long lists — summarize: "Found 8 products — best match is X at Y RON"
@@ -305,6 +326,15 @@ Multi-item flow:
 4. On image → analyze first, then immediately search
 5. Be proactive: after a recipe, offer to search all ingredients at once
 6. Handle "the first/second/cheapest/that one" by referencing the last search result
+
+# CONVERSATION STYLE — MANDATORY
+- NEVER narrate or describe your tool calls. Do NOT say "I'll use find_shopping_items", "I'm calling the X tool", "I've configured the queries parameter", "I've set a limit of N products", or any variation of this.
+- NEVER use markdown headings (##, ###) in your responses.
+- NEVER use backtick code formatting for tool names, parameters, or values.
+- Call tools SILENTLY. Only speak the result after the tool returns.
+- Your entire visible response must be pure natural conversation — no technical details, no internal reasoning, no JSON.
+- Bad: "I've decided to employ the \`find_shopping_items\` tool with \`queries\`=[\"eggs\",\"milk\"]"
+- Good: (call tool silently, then) "Found eggs and milk! Best egg option is Toneli 10-pack at 22.19 RON. Want to add them?"
 `;
 
 const SUGGESTIONS = [
@@ -737,7 +767,7 @@ function App() {
                   updateLastChatMessage('user', userStreamingTextRef.current.trim());
                 }
                 if (currentStreamingRole.current === 'agent' && agentStreamingTextRef.current.trim()) {
-                  updateLastChatMessage('agent', agentStreamingTextRef.current.trim());
+                  updateLastChatMessage('agent', filterAgentDisplay(stripThinking(agentStreamingTextRef.current)).trim());
                 }
                 lastUIUpdateRef.current = now;
               }
@@ -749,8 +779,9 @@ function App() {
 
               // Finalize any streaming message
               if (currentStreamingRole.current === 'agent' && agentStreamingTextRef.current.trim()) {
-                updateLastChatMessage('agent', agentStreamingTextRef.current.trim());
-                addLog('agent', agentStreamingTextRef.current.trim());
+                const interruptedText = filterAgentDisplay(stripThinking(agentStreamingTextRef.current)).trim();
+                updateLastChatMessage('agent', interruptedText);
+                addLog('agent', interruptedText);
               }
 
               agentStreamingTextRef.current = '';
@@ -834,7 +865,7 @@ function App() {
                       product_id: args.product_id,
                       product_name: addedProduct.product_name || args.product_name || foundProduct?.product_name || args.product_id,
                       price: finalPrice,
-                      image_url: addedProduct.image_url || foundProduct?.image_url || foundProduct?.images?.[0]
+                      image_url: addedProduct.image_url || foundProduct?.images?.[0] || foundProduct?.image_url || undefined
                     };
 
                     addItemToLocalCart(cartItem, qty);
@@ -1118,7 +1149,7 @@ function App() {
             <div className="w-10 h-10 bg-gradient-to-br from-blue-500 to-violet-600 rounded-xl flex items-center justify-center shadow-lg shadow-blue-500/30 text-xl">
               🛒
             </div>
-            <span className="text-white font-semibold text-[15px] tracking-tight">MIA — Multimodal Intelligence Assistant</span>
+            <span className="text-white font-semibold text-[15px] tracking-tight">Shopping AI Assistant</span>
           </div>
 
           {/* Main headline */}
@@ -1170,7 +1201,7 @@ function App() {
           {/* Mobile logo */}
           <div className="lg:hidden flex items-center gap-2 mb-10">
             <div className="w-9 h-9 bg-gradient-to-br from-blue-500 to-violet-600 rounded-xl flex items-center justify-center shadow-md text-lg">🛒</div>
-            <span className="text-gray-900 font-bold text-[16px]">MIA</span>
+            <span className="text-gray-900 font-bold text-[16px]">Shopping AI</span>
           </div>
 
           <div className="w-full max-w-[360px]">
@@ -1671,13 +1702,25 @@ function App() {
               <div className="divide-y divide-gray-100">
                 {cartItems.map((item) => (
                   <div key={item.product_id} className="px-4 py-3 flex gap-3 hover:bg-gray-50 transition-colors">
-                    {item.image_url ? (
-                      <img src={item.image_url} alt="" className="w-12 h-12 rounded-lg object-contain bg-gray-50 border border-gray-100 flex-shrink-0" />
-                    ) : (
-                      <div className="w-12 h-12 rounded-lg bg-gray-100 flex items-center justify-center flex-shrink-0">
-                        <svg className="w-5 h-5 text-gray-300" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v10l8 4" /></svg>
-                      </div>
-                    )}
+                    <div className="w-12 h-12 rounded-lg bg-white border border-gray-100 flex items-center justify-center flex-shrink-0 overflow-hidden">
+                      {item.image_url ? (
+                        <img
+                          src={item.image_url}
+                          alt={item.product_name}
+                          className="w-full h-full object-contain p-0.5"
+                          onError={(e) => {
+                            const target = e.currentTarget;
+                            target.style.display = 'none';
+                            const parent = target.parentElement;
+                            if (parent) {
+                              parent.innerHTML = `<svg class="w-5 h-5 text-gray-300" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z"/></svg>`;
+                            }
+                          }}
+                        />
+                      ) : (
+                        <svg className="w-5 h-5 text-gray-300" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" /></svg>
+                      )}
+                    </div>
                     <div className="flex-1 min-w-0">
                       <p className="text-xs font-medium text-gray-800 line-clamp-2 leading-tight mb-1">{item.product_name}</p>
                       <div className="flex items-center justify-between">
