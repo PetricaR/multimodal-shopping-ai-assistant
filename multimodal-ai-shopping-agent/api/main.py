@@ -25,7 +25,7 @@ _setup_python_path()
 # --- 2. Configuration & Imports ---
 # --- 2. Configuration & Imports ---
 from config.settings import settings
-from api.routes import similarity, auth, store, cart, recipes, live_search, user_profile, chef, config, debug
+from api.routes import similarity, auth, store, cart, recipes, live_search, user_profile, chef, config, debug, weather, calendar
 
 # --- 3. App Factory ---
 def create_app() -> FastAPI:
@@ -60,6 +60,8 @@ def create_app() -> FastAPI:
     application.include_router(chef.router)
     application.include_router(config.router)
     application.include_router(debug.router)
+    application.include_router(weather.router)
+    application.include_router(calendar.router)
 
     @application.api_route("/health", methods=["GET", "HEAD"])
     async def health():

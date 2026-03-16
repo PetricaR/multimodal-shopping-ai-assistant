@@ -39,7 +39,7 @@ import {
   searchProducts, searchByProductName, checkHealth, setApiLogger,
   addToCart, removeFromCart, updateCartQuantity, clearCart, login, getRecipeIngredients, optimizeBudget, optimizeCart,
   getUserProfile, updateUserProfile, proposeMealPlan, getMealPlanDetails,
-  getSystemConfig
+  getSystemConfig, getWeatherContext, getCalendarContext
 } from './services/api';
 import { AudioUtils, PCMStreamPlayer } from './services/audio';
 import { Visualizer } from './components/Visualizer';
@@ -65,26 +65,35 @@ const filterAgentDisplay = (text: string): string => {
   // 2. Strip markdown headings entirely (agent should never use them)
   out = out.replace(/^#{1,6}\s+.+$/gm, '');
 
-  // 3. Strip inline backtick code (tool names, params — always technical)
-  out = out.replace(/`[^`]+`/g, '');
+  // 3. Strip "bold heading" lines that are internal reasoning titles
+  //    e.g. "**Analyzing the Request**", "**Formulating Search Queries**"
+  out = out.replace(/^\*\*[^*\n]{3,60}\*\*\s*$/gm, '');
 
-  // 4. Strip sentences/lines describing tool employment
+  // 4. Strip whole paragraphs that are clearly internal planning/reasoning
+  //    Matches: "I've determined...", "I'm focusing on...", "I've confirmed...", "I've formulated..."
+  const planningParagraph = /^[^\n]*\b(I(?:'ve|'m| have| am| will|'ll))\s+(?:determined|confirmed|identified|formulated|constructed|focused|decided|concluded|noted|realized|going to|now going|about to|planning)[^\n]*/gim;
+  out = out.replace(planningParagraph, '');
+
+  // 5. Strip sentences/lines describing tool employment
   out = out.replace(/[^.!?\n]*\b(employ|use|call|invoke|execute|trigger|utilize)\s+the\s+\w[\w_]*\s+tool[^.!?\n]*/gi, '');
   out = out.replace(/[^.!?\n]*\b(I(?:'ve| have| will|'ll| am|'m))\s+(?:decided to |going to |now |about to )?(?:employ|use|call|invoke|execute|run|trigger)\s+\w[\w_]*[^.!?\n]*/gi, '');
 
-  // 5. Strip lines describing parameter configuration
+  // 6. Strip lines describing parameter configuration
   out = out.replace(/^[^.!?\n]*\b(configured?|set|specified|passed|included)\s+the\s+`?\w+`?\s*(parameter|param|argument|arg|query|value)[^.!?\n]*$/gim, '');
 
-  // 6. Strip lines about limits/settings for a search
-  out = out.replace(/^[^.!?\n]*\b(set|setting)\s+(a\s+)?limit\s+of\s+\d+[^.!?\n]*$/gim, '');
+  // 7. Strip lines about search strategy/limits
+  out = out.replace(/^[^.!?\n]*\b(search strategy|opted to search|set a limit|keep results concise|search across)[^.!?\n]*$/gim, '');
 
-  // 7. Strip bare JSON objects/arrays
+  // 8. Strip inline backtick code (tool names, params — always technical)
+  out = out.replace(/`[^`]+`/g, '');
+
+  // 9. Strip bare JSON objects/arrays
   out = out.replace(/^\s*[\[\{][\s\S]*?[\]\}]\s*$/gm, '');
 
-  // 8. Ensure space after punctuation that got concatenated (e.g. "Got it!For")
+  // 10. Ensure space after punctuation concatenated by streaming (e.g. "Got it!For" → "Got it! For")
   out = out.replace(/([.!?])([A-Z])/g, '$1 $2');
 
-  // 9. Collapse multiple blank lines
+  // 11. Collapse multiple blank lines
   out = out.replace(/\n{3,}/g, '\n\n');
 
   return out.trim();
@@ -258,6 +267,16 @@ const manageUserProfileTool: FunctionDeclaration = {
   }
 };
 
+const getCalendarContextTool: FunctionDeclaration = {
+  name: 'get_calendar_context',
+  description: 'Get upcoming Romanian public holidays for the next 7 days. Call this when planning meals, recipes, or shopping for a holiday (e.g. Easter, Christmas, 1 Decembrie). Use it to suggest festive recipes and traditional ingredients.',
+};
+
+const getWeatherContextTool: FunctionDeclaration = {
+  name: 'get_weather_context',
+  description: 'Get current weather conditions at the user\'s location. Call this to tailor product, recipe, or meal suggestions to the weather (e.g. hot soup on a cold rainy day, cold drinks on a hot sunny day, umbrella reminder, etc.).',
+};
+
 // =====================================================================
 // SYSTEM INSTRUCTION - Optimized for Romanian Voice Interaction
 // =====================================================================
@@ -298,6 +317,18 @@ Context: Remember what was found this session. "The first one" = most recent sea
 6. manage_user_profile(action)
    → Dietary preferences, allergies, budget setup
 
+7. get_calendar_context()
+   → Call when user asks about upcoming holidays, weekend plans, or festive cooking
+   → Also call at the start of meal planning to check for nearby holidays
+   → Returns: list of Romanian public holidays in the next 7 days (date + name)
+   → Use to suggest traditional festive recipes (e.g. cozonac for Easter/Christmas, sarmale for holidays)
+
+8. get_weather_context()
+   → Call at the start of ANY meal plan, recipe, or product recommendation session
+   → Also call when user mentions the weather or asks "what should I cook/eat today"
+   → Returns: temperature (°C), condition (Sunny/Rainy/Cloudy/etc.), humidity, wind, precipitation probability
+   → Use this to tailor suggestions: hot soup when cold/rainy, salads/cold drinks when hot/sunny, comfort food when stormy
+
 # LIVE INTERACTION PATTERNS
 
 Search flow:
@@ -314,6 +345,10 @@ Recipe flow:
 Multi-item flow:
   User: "I need ingredients for a salad" → call find_shopping_items(["lettuce","tomatoes","cucumber","olive oil","feta"])
 
+Weather-aware flow:
+  User: "what should I cook today?" → call get_weather_context() → if cold/rainy: "It's 8°C and rainy — perfect for a warm soup! Want me to find ingredients for a creamy tomato soup?" → call find_shopping_items(["tomatoes","cream","onion","garlic"])
+  User: "suggest something for tonight" → call get_weather_context() first, then propose_meal_plan() with weather context in mind
+
 # GROUNDING & ACCURACY
 - Product info comes from live catalog search — always call find_shopping_items, never invent products or prices
 - Recipe ingredients come from get_recipe_ingredients — powered by Gemini AI with real recipes
@@ -329,10 +364,12 @@ Multi-item flow:
 
 # CONVERSATION STYLE — MANDATORY
 - NEVER narrate or describe your tool calls. Do NOT say "I'll use find_shopping_items", "I'm calling the X tool", "I've configured the queries parameter", "I've set a limit of N products", or any variation of this.
-- NEVER use markdown headings (##, ###) in your responses.
+- NEVER use markdown headings (##, ###) or bold headings (**Analyzing the Request**, **Formulating Queries**, etc.) in your responses.
 - NEVER use backtick code formatting for tool names, parameters, or values.
+- NEVER write internal reasoning like "I've determined...", "I've confirmed...", "I'm focusing on...", "I've formulated...".
 - Call tools SILENTLY. Only speak the result after the tool returns.
 - Your entire visible response must be pure natural conversation — no technical details, no internal reasoning, no JSON.
+- Bad: "**Analyzing the Request** — I've determined the user wants eggs. I've formulated a search strategy focusing on 'oua bio'."
 - Bad: "I've decided to employ the \`find_shopping_items\` tool with \`queries\`=[\"eggs\",\"milk\"]"
 - Good: (call tool silently, then) "Found eggs and milk! Best egg option is Toneli 10-pack at 22.19 RON. Want to add them?"
 `;
@@ -371,7 +408,7 @@ const toolsConfig = {
         findShoppingItemsTool, suggestSubstitutionTool, addToCartTool, removeFromCartTool,
         updateCartQuantityTool, getRecipeIngredientsTool, optimizeBudgetTool,
         optimizeShoppingStrategyTool, proposeMealPlanTool, getMealPlanDetailsTool,
-        manageUserProfileTool
+        manageUserProfileTool, getWeatherContextTool, getCalendarContextTool
       ]
     },
     // Google Search grounding — enables real-time nutrition info, seasonal tips, cooking advice
@@ -911,6 +948,27 @@ function App() {
                   else if (call.name === 'manage_user_profile') {
                     const args = call.args as any;
                     result = args.action === 'view' ? await getUserProfile() : await updateUserProfile(args.profile_update);
+                  }
+                  else if (call.name === 'get_calendar_context') {
+                    result = await getCalendarContext(7);
+                    const count = result.holidays?.length ?? 0;
+                    addLog('system', `📅 Calendar: ${count} holiday(s) in next 7 days`);
+                  }
+                  else if (call.name === 'get_weather_context') {
+                    // Get browser geolocation, fallback to Bucharest
+                    const coords = await new Promise<{ lat: number; lon: number }>((resolve) => {
+                      if (navigator.geolocation) {
+                        navigator.geolocation.getCurrentPosition(
+                          (pos) => resolve({ lat: pos.coords.latitude, lon: pos.coords.longitude }),
+                          () => resolve({ lat: 44.4268, lon: 26.1025 }), // Bucharest fallback
+                          { timeout: 4000 }
+                        );
+                      } else {
+                        resolve({ lat: 44.4268, lon: 26.1025 });
+                      }
+                    });
+                    result = await getWeatherContext(coords.lat, coords.lon);
+                    addLog('system', `🌤 Weather: ${result.temperature}°C, ${result.condition}`);
                   }
                 } catch (err) {
                   const errorMsg = err instanceof Error ? err.message : String(err);
