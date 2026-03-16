@@ -62,7 +62,7 @@ gcloud run deploy ${SERVICE_NAME} \
   --min-instances=1 \
   --concurrency=80 \
   --add-cloudsql-instances=${CLOUD_SQL_INSTANCE} \
-  --set-secrets="GOOGLE_API_KEY=gemini-api-key:latest" \
+  --set-secrets="GOOGLE_API_KEY=gemini-api-key:latest,GOOGLE_MAPS_API_KEY=GOOGLE_MAPS_API_KEY:latest" \
   --set-env-vars="USE_POSTGRES=true,DB_HOST=/cloudsql/${CLOUD_SQL_INSTANCE},DB_PORT=5432,DB_NAME=bringo_auth,DB_USER=bringo_user,DB_PASSWORD=${DB_PASSWORD},GCP_PROJECT_ID=${PROJECT_ID},PROJECT_ID=${PROJECT_ID},LOCATION=${REGION},BQ_DATASET=bringo_products_data,BQ_TABLE=bringo_products_native,BQ_OUTPUT_DATASET=bringo_similarity_search_multimodal,VS_INDEX_NAME=bringo-product-index-multimodal,VS_ENDPOINT_NAME=bringo-product-endpoint-multimodal,VS_DEPLOYED_INDEX_ID=bringo_products_multimodal_deployed,FS_PUBLIC_ENDPOINT=527765581332480.europe-west1-845266575866.featurestore.vertexai.goog,FS_METADATA_VIEW=bringo_product_data,ENABLE_SESSION_VALIDATION_ON_REQUEST=false,SESSION_REFRESH_BUFFER_MINUTES=30,BRINGO_BASE_URL=https://www.bringo.ro,BRINGO_USERNAME=radan.petrica@yahoo.com,BRINGO_PASSWORD=AgentAI2025,BRINGO_STORE=carrefour_park_lake,API_HOST=0.0.0.0,API_PORT=8080"
 
 echo ""
