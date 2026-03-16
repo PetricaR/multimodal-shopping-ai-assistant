@@ -36,6 +36,8 @@ export const ProductResultsBlock: React.FC<ProductResultsBlockProps> = ({
 
   if (!queryGroups || queryGroups.length === 0) return null;
 
+  let globalCardIndex = 0;
+
   return (
     <div className="max-w-[95%] rounded-2xl px-4 py-3 bg-white border border-gray-200 rounded-bl-md space-y-4">
       {queryGroups.map((group, idx) => (
@@ -69,6 +71,7 @@ export const ProductResultsBlock: React.FC<ProductResultsBlockProps> = ({
               >
                 {group.products.map((product) => {
                   const cartItem = cartItems.find(c => c.product_id === product.product_id);
+                  const cardIndex = globalCardIndex++;
                   return (
                     <CompactProductCard
                       key={product.product_id}
@@ -79,6 +82,7 @@ export const ProductResultsBlock: React.FC<ProductResultsBlockProps> = ({
                       cartQuantity={cartItem?.quantity || 0}
                       onIncrementQuantity={onIncrementQuantity}
                       onDecrementQuantity={onDecrementQuantity}
+                      animationIndex={cardIndex}
                     />
                   );
                 })}

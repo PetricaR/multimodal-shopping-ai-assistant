@@ -1272,11 +1272,15 @@ function App() {
 
         {/* Header Bar */}
         <div className="h-14 flex items-center px-4 border-b border-gray-100 bg-white gap-2">
-          <div className="w-8 h-8 bg-blue-600 rounded-lg flex items-center justify-center text-sm shadow-sm flex-shrink-0">
-            👨‍🍳
+          <div className="w-8 h-8 bg-gradient-to-br from-blue-500 to-blue-700 rounded-lg flex items-center justify-center shadow-sm flex-shrink-0">
+            <svg className="w-4 h-4 text-white" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M12 2L2 7l10 5 10-5-10-5z"/>
+              <path d="M2 17l10 5 10-5"/>
+              <path d="M2 12l10 5 10-5"/>
+            </svg>
           </div>
           <div className="flex-1 min-w-0">
-            <h1 className="text-sm font-semibold text-gray-900 tracking-tight truncate">Shopping <span className="text-blue-600">AI</span></h1>
+            <h1 className="text-sm font-semibold text-gray-900 tracking-tight truncate"><span className="text-blue-600">AI</span> Assistant</h1>
             {/* Store Selector */}
             <select
               value={selectedStore}

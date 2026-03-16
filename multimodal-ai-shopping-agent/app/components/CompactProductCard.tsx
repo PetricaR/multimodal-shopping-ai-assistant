@@ -9,6 +9,7 @@ interface CompactProductCardProps {
   cartQuantity?: number;
   onIncrementQuantity?: (productId: string, productName: string) => void;
   onDecrementQuantity?: (productId: string, productName: string) => void;
+  animationIndex?: number;
 }
 
 export const CompactProductCard: React.FC<CompactProductCardProps> = ({
@@ -19,6 +20,7 @@ export const CompactProductCard: React.FC<CompactProductCardProps> = ({
   cartQuantity = 0,
   onIncrementQuantity,
   onDecrementQuantity,
+  animationIndex = 0,
 }) => {
   const [imgError, setImgError] = useState(false);
 
@@ -28,7 +30,8 @@ export const CompactProductCard: React.FC<CompactProductCardProps> = ({
 
   return (
     <div
-      className="w-[180px] flex-shrink-0 bg-[#1F2937] rounded-xl overflow-hidden border border-gray-700/50 hover:border-blue-500/40 transition-all cursor-pointer"
+      className="w-[180px] flex-shrink-0 bg-[#1F2937] rounded-xl overflow-hidden border border-gray-700/50 hover:border-blue-500/40 transition-all cursor-pointer card-reveal"
+      style={{ animationDelay: `${animationIndex * 55}ms` }}
       onClick={() => onProductClick?.(product)}
     >
       <div className="relative h-24 bg-white flex items-center justify-center p-2">
