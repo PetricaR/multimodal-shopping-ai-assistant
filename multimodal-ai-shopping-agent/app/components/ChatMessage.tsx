@@ -7,7 +7,9 @@ interface ChatMessageProps {
   isStreaming?: boolean;
 }
 
-/** Handle inline bold/italic formatting */
+/** Handle inline bold/italic formatting.
+ * NOTE: Nested bold+italic (e.g. **bold *italic***) is not supported — only top-level bold or italic.
+ */
 const renderInline = (text: string): React.ReactNode => {
   const parts = text.split(/(\*\*[^*]+\*\*)/g);
   return parts.map((part, i) => {
@@ -73,7 +75,7 @@ export const ChatMessage: React.FC<ChatMessageProps> = ({ role, text, timestamp,
       {/* Avatar */}
       <div className="w-7 h-7 rounded-full bg-gradient-to-br from-blue-500 to-violet-600 flex items-center justify-center flex-shrink-0 mt-0.5 shadow-sm">
         <svg className="w-3.5 h-3.5 text-white" viewBox="0 0 24 24" fill="currentColor">
-          <path d="M9.937 15.5A2 2 0 0 0 8.5 14.063l-6.135-1.582a.5.5 0 0 1 0-.962L8.5 9.937A2 2 0 0 0 9.937 8.5l1.582-6.135a.5.5 0 0 1 .963 0L14.063 8.5A2 2 0 0 0 15.5 9.937l6.135 1.581a.5.5 0 0 1 0 .964L15.5 14.063a2 2 0 0 0-1.437 1.437l-1.582 6.135a.5.5 0 0 1-.963 0z"/>
+          <path d="M9.937 15.5A2 2 0 0 0 8.5 14.063l-6.135-1.582a.5.5 0 0 1 0-.962L8.5 9.937A2 2 0 0 0 9.937 8.5l1.582-6.135a.5.5 0 0 1 .963 0L14.063 8.5A2 2 0 0 0 15.5 9.937l6.135 1.581a.5.5 0 0 1 0 .964L15.5 14.063a2 2 0 0 0-1.437 1.437l-1.582 6.135a.5.5 0 0 1-.963 0z" />
         </svg>
       </div>
 
