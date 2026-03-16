@@ -632,7 +632,7 @@ export const login = async (username: string, password: string): Promise<boolean
 export const getCalendarContext = async (days: number = 7): Promise<any> => {
     const url = `${API_HOST}/api/v1/calendar/holidays?days=${days}`;
     log(`[REQUEST] GET ${url}`);
-    const response = await fetch(url, { headers: { "x-api-key": API_KEY, "Accept": "application/json" } });
+    const response = await fetchWithTimeout(url, { method: 'GET', headers: { "x-api-key": API_KEY, "Accept": "application/json" } }, 10000);
     if (!response.ok) throw new Error(`Calendar API ${response.status}`);
     return response.json();
 };
@@ -640,7 +640,7 @@ export const getCalendarContext = async (days: number = 7): Promise<any> => {
 export const getWeatherContext = async (lat: number, lon: number): Promise<any> => {
     const url = `${API_HOST}/api/v1/weather/current?lat=${lat}&lon=${lon}&hours=3`;
     log(`[REQUEST] GET ${url}`);
-    const response = await fetch(url, { headers: { "x-api-key": API_KEY, "Accept": "application/json" } });
+    const response = await fetchWithTimeout(url, { method: 'GET', headers: { "x-api-key": API_KEY, "Accept": "application/json" } }, 10000);
     if (!response.ok) {
         const txt = await response.text();
         throw new Error(`Weather API ${response.status}: ${txt}`);

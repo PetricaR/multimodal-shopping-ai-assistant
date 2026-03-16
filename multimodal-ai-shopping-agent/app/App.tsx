@@ -547,21 +547,12 @@ function App() {
           const session = JSON.parse(savedSession);
           const hoursSinceLogin = (Date.now() - session.timestamp) / (1000 * 60 * 60);
 
-          if (hoursSinceLogin < 12) {
+          if (hoursSinceLogin < 12 && session.username) {
             setBringoUsername(session.username);
-            setBringoPassword(session.password);
-            addLog('system', `Auto-login: ${session.username}`);
-
-            const success = await login(session.username, session.password);
-            if (success) {
-              setBringoAuthStatus('authenticated');
-              setBringoAuthMsg(`Logged in as ${session.username}`);
-              setCurrentPage('chat');
-              addLog('system', 'AUTO-LOGIN: SUCCESS');
-            } else {
-              localStorage.removeItem('bringo_session');
-              addLog('system', 'AUTO-LOGIN: FAILED');
-            }
+            addLog('system', `Restored session for: ${session.username}`);
+            // Skip auto-login — session cookie handled by backend.
+            // User can re-authenticate manually if session has expired.
+            setCurrentPage('chat');
           } else {
             localStorage.removeItem('bringo_session');
             addLog('system', 'AUTO-LOGIN: Session expired');
@@ -642,7 +633,7 @@ function App() {
   };
 
   const formatPrice = (price: number): string => {
-    return price.toFixed(2).replace('.', ',');
+    return (price ?? 0).toFixed(2).replace('.', ',');
   };
 
   // Cart helpers
@@ -1107,12 +1098,12 @@ function App() {
   const handleTextSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     if (!textInput.trim() || agentState === AgentState.DISCONNECTED) return;
-    
+
     const query = textInput.trim();
     setTextInput('');
     addChatMessage('user', query);
     addLog('user', query);
-    
+
     if (liveSessionRef.current) {
       liveSessionRef.current.sendClientContent({ turns: [{ parts: [{ text: query }] }] });
     }
@@ -1170,17 +1161,16 @@ function App() {
       setBringoAuthStatus('error');
       return;
     }
-    
+
     setBringoAuthStatus('loading');
     setBringoAuthMsg('');
     addLog('system', `BRINGO LOGIN: ${bringoUsername}`);
-    
+
     try {
       const success = await login(bringoUsername, bringoPassword);
       if (success) {
         localStorage.setItem('bringo_session', JSON.stringify({
           username: bringoUsername,
-          password: bringoPassword,
           timestamp: Date.now()
         }));
 
@@ -1232,7 +1222,7 @@ function App() {
 
   const handleUpdateQuantity = async (product_id: string, product_name: string, newQty: number) => {
     if (newQty <= 0) {
-      handleRemoveFromCart(product_id, product_name);
+      await handleRemoveFromCart(product_id, product_name);
       return;
     }
     try {
@@ -1245,7 +1235,7 @@ function App() {
 
   const handleClearCart = async () => {
     if (cartItems.length === 0 || !window.confirm("Are you sure you want to clear the cart?")) return;
-    
+
     try {
       await clearCart();
       setCartItems([]);
@@ -1287,7 +1277,7 @@ function App() {
             <div className="absolute bottom-0 right-0 w-[600px] h-[600px] bg-[radial-gradient(circle,rgba(139,92,246,0.12),transparent_70%)]"></div>
             <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[900px] h-[500px] bg-blue-950/30 rounded-full blur-[80px]"></div>
             <div className="absolute inset-0 opacity-[0.03]"
-              style={{backgroundImage:'linear-gradient(rgba(255,255,255,0.5) 1px,transparent 1px),linear-gradient(90deg,rgba(255,255,255,0.5) 1px,transparent 1px)',backgroundSize:'60px 60px'}}>
+              style={{ backgroundImage: 'linear-gradient(rgba(255,255,255,0.5) 1px,transparent 1px),linear-gradient(90deg,rgba(255,255,255,0.5) 1px,transparent 1px)', backgroundSize: '60px 60px' }}>
             </div>
           </div>
 
@@ -1398,15 +1388,13 @@ function App() {
               </div>
 
               {bringoAuthMsg && (
-                <div className={`px-4 py-2.5 rounded-xl text-xs flex items-center gap-2 ${
-                  bringoAuthStatus === 'authenticated' ? 'bg-emerald-50 text-emerald-700 border border-emerald-200' :
+                <div className={`px-4 py-2.5 rounded-xl text-xs flex items-center gap-2 ${bringoAuthStatus === 'authenticated' ? 'bg-emerald-50 text-emerald-700 border border-emerald-200' :
                   bringoAuthStatus === 'error' ? 'bg-red-50 text-red-700 border border-red-200' :
-                  'bg-blue-50 text-blue-700 border border-blue-200'
-                }`}>
-                  <div className={`w-1.5 h-1.5 rounded-full flex-shrink-0 ${
-                    bringoAuthStatus === 'authenticated' ? 'bg-emerald-500' :
+                    'bg-blue-50 text-blue-700 border border-blue-200'
+                  }`}>
+                  <div className={`w-1.5 h-1.5 rounded-full flex-shrink-0 ${bringoAuthStatus === 'authenticated' ? 'bg-emerald-500' :
                     bringoAuthStatus === 'error' ? 'bg-red-500' : 'bg-blue-500 animate-pulse'
-                  }`}></div>
+                    }`}></div>
                   {bringoAuthMsg}
                 </div>
               )}
@@ -1466,7 +1454,7 @@ function App() {
         <div className="h-14 flex items-center px-4 border-b border-gray-100 bg-white gap-2">
           <div className="w-8 h-8 bg-gradient-to-br from-blue-500 to-violet-600 rounded-xl flex items-center justify-center shadow-sm flex-shrink-0">
             <svg className="w-4 h-4 text-white" viewBox="0 0 24 24" fill="currentColor">
-              <path d="M9.937 15.5A2 2 0 0 0 8.5 14.063l-6.135-1.582a.5.5 0 0 1 0-.962L8.5 9.937A2 2 0 0 0 9.937 8.5l1.582-6.135a.5.5 0 0 1 .963 0L14.063 8.5A2 2 0 0 0 15.5 9.937l6.135 1.581a.5.5 0 0 1 0 .964L15.5 14.063a2 2 0 0 0-1.437 1.437l-1.582 6.135a.5.5 0 0 1-.963 0z"/>
+              <path d="M9.937 15.5A2 2 0 0 0 8.5 14.063l-6.135-1.582a.5.5 0 0 1 0-.962L8.5 9.937A2 2 0 0 0 9.937 8.5l1.582-6.135a.5.5 0 0 1 .963 0L14.063 8.5A2 2 0 0 0 15.5 9.937l6.135 1.581a.5.5 0 0 1 0 .964L15.5 14.063a2 2 0 0 0-1.437 1.437l-1.582 6.135a.5.5 0 0 1-.963 0z" />
             </svg>
           </div>
           <div className="flex-1 min-w-0">
@@ -1569,6 +1557,26 @@ function App() {
             if (entry.type === 'text') {
               return <ChatMessage key={entry.id} role={entry.role} text={entry.text} timestamp={entry.timestamp} />;
             }
+            if (entry.type === 'product_results') {
+              return (
+                <div key={entry.id} className="my-2">
+                  <ProductResultsBlock
+                    queryGroups={entry.queryGroups}
+                    isSubstitution={entry.isSubstitution}
+                    cartItems={cartItems}
+                    onAddToCart={handleAddToCart}
+                    onIncrementQuantity={(productId, productName) => {
+                      const item = cartItems.find(i => i.product_id === productId);
+                      handleUpdateQuantity(productId, productName, (item?.quantity || 0) + 1);
+                    }}
+                    onDecrementQuantity={(productId, productName) => {
+                      const item = cartItems.find(i => i.product_id === productId);
+                      handleUpdateQuantity(productId, productName, (item?.quantity || 1) - 1);
+                    }}
+                  />
+                </div>
+              );
+            }
             return null;
           })}
           {/* Live streaming agent message */}
@@ -1654,9 +1662,9 @@ function App() {
                         title={isSoundEnabled ? "Sound on (click to mute)" : "Sound off (click to enable)"}
                       >
                         {isSoundEnabled ? (
-                          <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 24 24"><path d="M3 9v6h4l5 5V4L7 9H3zm13.5 3c0-1.77-1.02-3.29-2.5-4.03v8.05c1.48-.73 2.5-2.25 2.5-4.02zM14 3.23v2.06c2.89.86 5 3.54 5 6.71s-2.11 5.85-5 6.71v2.06c4.01-.91 7-4.49 7-8.77s-2.99-7.86-7-8.77z"/></svg>
+                          <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 24 24"><path d="M3 9v6h4l5 5V4L7 9H3zm13.5 3c0-1.77-1.02-3.29-2.5-4.03v8.05c1.48-.73 2.5-2.25 2.5-4.02zM14 3.23v2.06c2.89.86 5 3.54 5 6.71s-2.11 5.85-5 6.71v2.06c4.01-.91 7-4.49 7-8.77s-2.99-7.86-7-8.77z" /></svg>
                         ) : (
-                          <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 24 24"><path d="M16.5 12c0-1.77-1.02-3.29-2.5-4.03v2.21l2.45 2.45c.03-.2.05-.41.05-.63zm2.5 0c0 .94-.2 1.82-.54 2.64l1.51 1.51C20.63 14.91 21 13.5 21 12c0-4.28-2.99-7.86-7-8.77v2.06c2.89.86 5 3.54 5 6.71zM4.27 3L3 4.27 7.73 9H3v6h4l5 5v-6.73l4.25 4.25c-.67.52-1.42.93-2.25 1.18v2.06c1.38-.31 2.63-.95 3.69-1.81L19.73 21 21 19.73l-9-9L4.27 3zM12 4L9.91 6.09 12 8.18V4z"/></svg>
+                          <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 24 24"><path d="M16.5 12c0-1.77-1.02-3.29-2.5-4.03v2.21l2.45 2.45c.03-.2.05-.41.05-.63zm2.5 0c0 .94-.2 1.82-.54 2.64l1.51 1.51C20.63 14.91 21 13.5 21 12c0-4.28-2.99-7.86-7-8.77v2.06c2.89.86 5 3.54 5 6.71zM4.27 3L3 4.27 7.73 9H3v6h4l5 5v-6.73l4.25 4.25c-.67.52-1.42.93-2.25 1.18v2.06c1.38-.31 2.63-.95 3.69-1.81L19.73 21 21 19.73l-9-9L4.27 3zM12 4L9.91 6.09 12 8.18V4z" /></svg>
                         )}
                       </button>
                       {/* Integrated Microphone Toggle */}
@@ -1893,7 +1901,10 @@ function App() {
                         alt={item.product_name}
                         className="w-full h-full object-contain p-1"
                         onError={(e) => {
-                          e.currentTarget.src = `https://placehold.co/56x56/f3f4f6/9ca3af?text=${encodeURIComponent(item.product_name.substring(0, 3))}`;
+                          const fallback = `https://placehold.co/56x56/f3f4f6/9ca3af?text=${encodeURIComponent(item.product_name.substring(0, 3))}`;
+                          if (e.currentTarget.src !== fallback) {
+                            e.currentTarget.src = fallback;
+                          }
                         }}
                       />
                     </div>
