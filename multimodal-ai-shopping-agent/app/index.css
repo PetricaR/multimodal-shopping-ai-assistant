@@ -87,3 +87,21 @@ h1, h2, h3, .font-display {
 .animate-fade-in {
   animation: fadeIn 0.4s ease-out forwards;
 }
+
+@keyframes cardReveal {
+  from {
+    opacity: 0;
+    transform: translateY(16px) scale(0.96);
+    filter: blur(2px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+    filter: blur(0);
+  }
+}
+
+.card-reveal {
+  opacity: 0;
+  animation: cardReveal 0.4s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
