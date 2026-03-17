@@ -294,7 +294,7 @@ const manageUserProfileTool: FunctionDeclaration = {
 
 const getCalendarContextTool: FunctionDeclaration = {
   name: 'get_calendar_context',
-  description: 'Get upcoming Romanian public holidays for the next 7 days. Call this when planning meals, recipes, or shopping for a holiday (e.g. Easter, Christmas, 1 Decembrie). Use it to suggest festive recipes and traditional ingredients.',
+  description: 'Get upcoming Romanian public holidays for the next 14 days. Call this when planning meals, recipes, or shopping for a holiday (e.g. Easter, Christmas, 1 Decembrie). Use it to suggest festive recipes and traditional ingredients.',
 };
 
 const getWeatherContextTool: FunctionDeclaration = {
@@ -351,7 +351,7 @@ Context: Remember what was found this session. "The first one" = most recent sea
 7. get_calendar_context()
    → Call when user asks about upcoming holidays, weekend plans, or festive cooking
    → Also call at the start of meal planning to check for nearby holidays
-   → Returns: list of Romanian public holidays in the next 7 days (date + name)
+   → Returns: list of Romanian public holidays in the next 14 days (date + name)
    → Use to suggest traditional festive recipes (e.g. cozonac for Easter/Christmas, sarmale for holidays)
 
 8. get_weather_context()
@@ -509,6 +509,8 @@ function App() {
   const liveSessionRef = useRef<any>(null);
   const isMicEnabledRef = useRef(false);
   const isSoundEnabledRef = useRef(false);
+  // Pre-loaded context injected into systemInstruction before first session
+  const startupContextRef = useRef<string>('');
 
   // Live streaming text shown while agent is responding
   const [liveAgentText, setLiveAgentText] = useState<string>('');
@@ -599,6 +601,7 @@ function App() {
 
     return () => { disconnect(); };
   }, []);
+
 
   useEffect(() => {
     isMicEnabledRef.current = isMicEnabled;
@@ -737,6 +740,60 @@ function App() {
       });
       addLog('system', '✅ Microphone granted');
 
+      // Build session context fresh at connect time so date/weather are never stale
+      addLog('system', '⏳ Loading session context...');
+      const ctxParts: string[] = [];
+      ctxParts.push(`Today is ${new Date().toLocaleString('ro-RO', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric', hour: '2-digit', minute: '2-digit' })}.`);
+
+      try {
+        const coords = await new Promise<{ lat: number; lon: number }>((resolve) => {
+          navigator.geolocation
+            ? navigator.geolocation.getCurrentPosition(
+                (p) => resolve({ lat: p.coords.latitude, lon: p.coords.longitude }),
+                () => resolve({ lat: 44.4268, lon: 26.1025 }),
+                { timeout: 4000 }
+              )
+            : resolve({ lat: 44.4268, lon: 26.1025 });
+        });
+        const w = await getWeatherContext(coords.lat, coords.lon);
+        if (w) ctxParts.push(`Current weather: ${w.condition ?? ''}, ${w.temperature_c ?? w.temp ?? '?'}°C, humidity ${w.humidity ?? '?'}%, precipitation chance ${w.precipitation_chance ?? w.precipitation ?? '?'}%.`);
+      } catch { /* non-fatal */ }
+
+      try {
+        const cal = await getCalendarContext(14);
+        const holidays: any[] = cal?.holidays ?? cal ?? [];
+        if (holidays.length > 0) {
+          ctxParts.push(`Upcoming public holidays (next 14 days): ${holidays.map((h: any) => `${h.date} – ${h.name}`).join('; ')}.`);
+        } else {
+          ctxParts.push('No public holidays in the next 14 days.');
+        }
+      } catch { /* non-fatal */ }
+
+      try {
+        const profile = await getUserProfile();
+        if (profile) {
+          const p = profile.physical ?? {};
+          const d = profile.dietary ?? {};
+          const pr = profile.preferences ?? {};
+          const f = profile.finance ?? {};
+          const profileLines: string[] = [];
+          if (p.age) profileLines.push(`age ${p.age}`);
+          if (p.gender) profileLines.push(p.gender);
+          if (p.weight) profileLines.push(`${p.weight}kg`);
+          if (d.primary_diet?.length) profileLines.push(`diet: ${d.primary_diet.join(', ')}`);
+          if (d.allergies?.length) profileLines.push(`allergies: ${d.allergies.join(', ')}`);
+          if (d.exclusions?.length) profileLines.push(`avoids: ${d.exclusions.join(', ')}`);
+          if (d.calorie_target) profileLines.push(`${d.calorie_target} kcal/day target`);
+          if (pr.complexity) profileLines.push(`prefers ${pr.complexity} recipes`);
+          if (pr.family_members) profileLines.push(`family: ${pr.family_members.adults} adults, ${pr.family_members.children} children`);
+          if (f.monthly_budget) profileLines.push(`budget: ${f.monthly_budget.min}–${f.monthly_budget.max} RON/month`);
+          if (profileLines.length) ctxParts.push(`User profile: ${profileLines.join(', ')}.`);
+        }
+      } catch { /* non-fatal */ }
+
+      startupContextRef.current = '\n\n# SESSION CONTEXT\n' + ctxParts.join('\n');
+      addLog('system', `✅ Session context ready (${ctxParts.length} data points)`);
+
       // Initialize Gemini AI
       addLog('system', 'Initializing Gemini AI...');
       const ai = new GoogleGenAI({ apiKey: keyToUse });
@@ -749,7 +806,7 @@ function App() {
         config: {
           // Native audio model ALWAYS requires AUDIO modality
           responseModalities: [Modality.AUDIO],
-          systemInstruction: SYSTEM_INSTRUCTION,
+          systemInstruction: SYSTEM_INSTRUCTION + startupContextRef.current,
           tools: toolsConfig.tools,
           inputAudioTranscription: {},
           outputAudioTranscription: {},
@@ -1059,9 +1116,9 @@ function App() {
                     result = args.action === 'view' ? await getUserProfile() : await updateUserProfile(args.profile_update);
                   }
                   else if (call.name === 'get_calendar_context') {
-                    result = await getCalendarContext(7);
+                    result = await getCalendarContext(14);
                     const count = result.holidays?.length ?? 0;
-                    addLog('system', `📅 Calendar: ${count} holiday(s) in next 7 days`);
+                    addLog('system', `📅 Calendar: ${count} holiday(s) in next 14 days`);
                   }
                   else if (call.name === 'get_weather_context') {
                     // Get browser geolocation, fallback to Bucharest
