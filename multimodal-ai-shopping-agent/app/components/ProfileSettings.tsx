@@ -12,7 +12,7 @@ const ALLERGY_OPTIONS = ["Gluten", "Dairy", "Peanuts", "Tree Nuts", "Soy", "Eggs
 const EXCLUSION_OPTIONS = ["Cilantro", "Mushrooms", "Olives", "Anchovies", "Liver", "Blue cheese", "Eggplant", "Beetroot"];
 const GOAL_OPTIONS = ["Eat healthy", "Lose weight", "Build muscle", "Save money", "Save time"];
 const MEAL_TYPES = ["Breakfast", "Lunch", "Dinner", "Snack"];
-const COOKING_METHODS = ["Stovetop", "Oven", "Air fryer", "Grill", "Instant Pot", "Raw/No-cook", "Slow cooking", "Microwave", "Steaming"];
+const COOKING_METHODS = ["Stovetop", "Oven", "Air fryer", "Grill", "Instant Pot", "Raw/No-cook", "Slow cooking", "Microwave", "Steaming", "Pressure cooking"];
 const COMPLEXITY_OPTIONS = [
   { value: 'novice', label: 'Novice', desc: 'Very simple, few ingredients' },
   { value: 'basic', label: 'Basic', desc: 'Simple recipes, 30 min' },
@@ -238,6 +238,26 @@ export const ProfileSettings: React.FC<ProfileSettingsProps> = ({ isOpen, onClos
                       <option value="">Select...</option>
                       {options.map(o => <option key={o} value={o}>{o}</option>)}
                     </select>
+                  </div>
+                ))}
+              </div>
+
+              <div className="pt-4 border-t border-white/10">
+                <label className="block text-sm font-medium text-white mb-3">Favorite Foods</label>
+                {(['breakfast', 'lunch', 'dinner'] as const).map(meal => (
+                  <div key={meal} className="mb-3">
+                    <label className="block text-xs font-medium text-gray-400 mb-1 capitalize">{meal}</label>
+                    <input
+                      type="text"
+                      placeholder={`e.g. omleta, toast (comma separated)`}
+                      className="w-full bg-black/20 border border-white/10 rounded-lg px-3 py-2 text-white text-sm focus:border-blue-500 outline-none placeholder-gray-600"
+                      value={(profile.preferences?.favorite_foods?.[meal] || []).join(', ')}
+                      onChange={(e) => {
+                        const items = e.target.value.split(',').map(s => s.trim()).filter(Boolean);
+                        const current = profile.preferences?.favorite_foods || {};
+                        updateSection('preferences', 'favorite_foods', { ...current, [meal]: items });
+                      }}
+                    />
                   </div>
                 ))}
               </div>

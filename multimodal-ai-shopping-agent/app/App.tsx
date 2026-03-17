@@ -363,21 +363,21 @@ Context: Remember what was found this session. "The first one" = most recent sea
 # LIVE INTERACTION PATTERNS
 
 Search flow:
-  User: "find eggs" → call find_shopping_items(["eggs"]) → "Got it! Best match: Ouă Ferma Noastră 10-pack at 8.50 RON. Add it?"
+  User: "find eggs" → call find_shopping_items(["ouă"]) → "Got it! Best match: Ouă Ferma Noastră 10-pack at 8.50 RON. Add it?"
   User: "yes" → call add_to_cart(...) → "✓ Eggs added!"
 
 Image flow:
   User: [photo of fridge] → "I see milk, cheese and leftover chicken. You could make a creamy chicken pasta! Want me to find the missing ingredients?"
-  → call find_shopping_items(["pasta","heavy cream","garlic"])
+  → call find_shopping_items(["paste","smântână pentru frișcă","usturoi"])
 
 Recipe flow:
-  User: "how do I make tiramisu?" → call get_recipe_ingredients("tiramisu") → "Tiramisu needs mascarpone, eggs, ladyfingers, espresso, and cocoa. Want me to add them to your cart?"
+  User: "how do I make tiramisu?" → call get_recipe_ingredients("tiramisu") → ingredients are found and find_shopping_items is called automatically
 
 Multi-item flow:
-  User: "I need ingredients for a salad" → call find_shopping_items(["lettuce","tomatoes","cucumber","olive oil","feta"])
+  User: "I need ingredients for a salad" → call find_shopping_items(["salată verde","roșii","castraveți","ulei de măsline","brânză feta"])
 
 Weather-aware flow:
-  User: "what should I cook today?" → call get_weather_context() → if cold/rainy: "It's 8°C and rainy — perfect for a warm soup! Want me to find ingredients for a creamy tomato soup?" → call find_shopping_items(["tomatoes","cream","onion","garlic"])
+  User: "what should I cook today?" → call get_weather_context() → if cold/rainy: "It's 8°C and rainy — perfect for a warm soup! Want me to find ingredients for a creamy tomato soup?" → call find_shopping_items(["roșii","smântână","ceapă","usturoi"])
   User: "suggest something for tonight" → call get_weather_context() first, then propose_meal_plan() with weather context in mind
 
 # GROUNDING & ACCURACY
@@ -495,6 +495,10 @@ function App() {
   const [bringoAuthMsg, setBringoAuthMsg] = useState('');
   const [selectedStore, setSelectedStore] = useState('carrefour_park_lake');
 
+  // Stable refs to avoid stale closure inside onmessage callback
+  const productsLookupRef = useRef<Map<string, Product>>(new Map());
+  const apiKeyRef = useRef<string>('');
+
   // Audio state
   const [isMicEnabled, setIsMicEnabled] = useState(true);
   const inputAudioContextRef = useRef<AudioContext | null>(null);
@@ -537,6 +541,11 @@ function App() {
     };
     loadConfig();
   }, []);
+
+  // Keep apiKeyRef in sync so onmessage callbacks always see the current key
+  useEffect(() => {
+    apiKeyRef.current = apiKey;
+  }, [apiKey]);
 
   useEffect(() => {
     const checkSavedSession = async () => {
@@ -947,11 +956,26 @@ function App() {
                       queryGroups.push({ query: q, products: qProducts });
                     }
                     const allProducts = queryGroups.flatMap(g => g.products);
+                    // Populate stable ref so add_to_cart can look up products without stale closure
+                    for (const p of allProducts) {
+                      productsLookupRef.current.set(p.product_id, p);
+                    }
                     setProducts(allProducts);
                     setSearchQueryGroups(queryGroups);
                     setIsSubstitutionMode(false);
-                    addLog('system', `FOUND ${allProducts.length} products across ${queries.length} queries`);
-                    result = { products: allProducts.map(p => ({ id: p.product_id, name: p.product_name, price: p.price, store: p.producer })) };
+                    const cacheKey = `search-${Date.now()}`;
+                    addLog('system', `FOUND ${allProducts.length} products across ${queries.length} queries (cache_key: ${cacheKey})`);
+                    result = {
+                      cache_key: cacheKey,
+                      products: allProducts.map(p => ({
+                        id: p.product_id,
+                        name: p.product_name,
+                        price: p.price,
+                        store: p.producer,
+                        product_url: p.url,
+                        image_url: p.images?.[0] || p.image_url,
+                      })),
+                    };
                   }
                   else if (call.name === 'suggest_substitution') {
                     const args = call.args as any;
@@ -973,7 +997,7 @@ function App() {
                     const data = await addToCart(args.product_id, qty, selectedStore, args.product_url, args.product_name);
 
                     const addedProduct = data.items_added?.[0] || {};
-                    const foundProduct = products.find(p => p.product_id === args.product_id);
+                    const foundProduct = productsLookupRef.current.get(args.product_id);
 
                     // Priority: AI-provided price > API response > found product > 0
                     const finalPrice = providedPrice || addedProduct.price || foundProduct?.price || 0;
@@ -1008,7 +1032,11 @@ function App() {
                   }
                   else if (call.name === 'get_recipe_ingredients') {
                     const args = call.args as any;
-                    result = await getRecipeIngredients(args.food_name, apiKey);
+                    const recipeData = await getRecipeIngredients(args.food_name, apiKeyRef.current);
+                    result = {
+                      ...recipeData,
+                      instructions: "Automatic Action: Immediately call find_shopping_items with the ingredients list translated to Romanian. Do not ask for user confirmation — just search right away."
+                    };
                   }
                   else if (call.name === 'optimize_budget') {
                     const args = call.args as any;
@@ -1019,7 +1047,8 @@ function App() {
                     result = await optimizeCart(args.cache_key);
                   }
                   else if (call.name === 'propose_meal_plan') {
-                    result = await proposeMealPlan();
+                    const planData = await proposeMealPlan();
+                    result = { result: planData, instructions: "Present this meal plan proposal to the user (breakfast, lunch, dinner, snack). Ask if they approve, and offer to search for the ingredients once confirmed." };
                   }
                   else if (call.name === 'get_meal_plan_details') {
                     const args = call.args as any;
