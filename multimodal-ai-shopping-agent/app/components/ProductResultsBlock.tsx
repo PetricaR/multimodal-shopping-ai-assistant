@@ -69,7 +69,10 @@ export const ProductResultsBlock: React.FC<ProductResultsBlockProps> = ({
                 ref={(el) => { scrollContainerRefs.current[idx] = el; }}
                 className="flex gap-3 overflow-x-auto pb-2 scrollbar-thin scrollbar-thumb-gray-300 scrollbar-track-transparent"
               >
-                {group.products.map((product) => {
+                {group.products
+                  .filter(product => !!(product.images?.[0] || product.image_url))
+                  .slice(0, 6)
+                  .map((product) => {
                   const cartItem = cartItems.find(c => c.product_id === product.product_id);
                   const cardIndex = globalCardIndex++;
                   return (

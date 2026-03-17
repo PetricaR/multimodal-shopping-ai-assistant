@@ -947,8 +947,8 @@ function App() {
                   if (call.name === 'find_shopping_items') {
                     const args = call.args as any;
                     const queries: string[] = Array.isArray(args.queries) ? args.queries : [args.queries || args.query_text || ''];
-                    // Fewer results per query when searching many items at once
-                    const perQueryLimit = queries.length > 3 ? 4 : (args.limit || 6);
+                    // Fetch extra so that after image-URL filtering we still show up to 6 valid cards per query
+                    const perQueryLimit = args.limit || 12;
                     const multiStore = args.multi_store || false;
                     const queryGroups: { query: string; products: Product[] }[] = [];
                     for (const q of queries) {
