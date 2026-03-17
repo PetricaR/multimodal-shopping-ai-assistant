@@ -25,8 +25,9 @@ export const CompactProductCard: React.FC<CompactProductCardProps> = ({
   const [imgError, setImgError] = useState(false);
 
   const imageUrl = product.images?.[0] || product.image_url;
-  const placeholder = `https://placehold.co/200x200/1f2937/ffffff?text=${encodeURIComponent(product.product_name.substring(0, 8))}`;
-  const activeImage = imgError || !imageUrl ? placeholder : imageUrl;
+
+  // Hide this card entirely if the image is missing or fails to load
+  if (!imageUrl || imgError) return null;
 
   return (
     <div
@@ -36,7 +37,7 @@ export const CompactProductCard: React.FC<CompactProductCardProps> = ({
     >
       <div className="relative h-24 bg-white flex items-center justify-center p-2">
         <img
-          src={activeImage}
+          src={imageUrl}
           alt={product.product_name}
           onError={() => setImgError(true)}
           className="h-full w-full object-contain"
