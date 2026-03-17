@@ -71,7 +71,7 @@ export const ProductResultsBlock: React.FC<ProductResultsBlockProps> = ({
               >
                 {group.products
                   .filter(product => !!(product.images?.[0] || product.image_url))
-                  .slice(0, 6)
+                  .slice(0, 10)
                   .map((product) => {
                   const cartItem = cartItems.find(c => c.product_id === product.product_id);
                   const cardIndex = globalCardIndex++;
