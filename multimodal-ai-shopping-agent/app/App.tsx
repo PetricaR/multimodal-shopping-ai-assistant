@@ -74,16 +74,31 @@ const filterAgentDisplay = (text: string): string => {
   // 5. Strip bare JSON objects/arrays
   out = out.replace(/^\s*[\[\{][\s\S]*?[\]\}]\s*$/gm, '');
 
-  // 6. Remove every line that is clearly agent internal narration.
+  // 6. Strip narration sentences inline — catches single-paragraph blobs before line-splitting.
+  const sentenceNarrationPatterns = [
+    /I'?m ready to[^.!?]*[.!?]?/gi,
+    /Using the tool[^.!?]*[.!?]/gi,
+    /My query is[^.!?]*[.!?]/gi,
+    /,?\s*as per the critical rules[^.!?]*/gi,
+    /,?\s*leveraging[^,.!?]*/gi,
+    /,?\s*to streamline the process[^.!?]*/gi,
+    /I'?ve (?:configured|set|formulated|determined|noted|constructed)[^.!?]*[.!?]/gi,
+    /The next step[^.!?]*[.!?]/gi,
+  ];
+  for (const p of sentenceNarrationPatterns) {
+    out = out.replace(p, '');
+  }
+
+  // 7. Remove every line that is clearly agent internal narration.
   //    Strategy: split into lines, drop any line that matches a narration pattern,
   //    keep everything else.
   const narrationPatterns = [
-    // "Let me ...", "Let me search / find / look / check / use ..."
+    // "Let me ..."
     /^\s*let me\b/i,
-    // "I'll ...", "I will ...", "I'm going to ...", "I am going to ..."
+    // "I'll ...", "I will ...", "I'm going to ..."
     /^\s*i(?:'ll| will| am going to|'m going to)\b/i,
-    // "I'm searching / looking / checking / calling / using / executing ..."
-    /^\s*i(?:'m| am)\s+(?:now\s+)?(?:search|look|check|call|using|execut|fetch|retriev|query|find|going)/i,
+    // "I'm ready / searching / looking / checking / calling / using ..."
+    /^\s*i(?:'m| am)\s+(?:now\s+)?(?:ready|search|look|check|call|using|execut|fetch|retriev|query|find|going)/i,
     // "I've found / searched / called / executed / identified ..."
     /^\s*i(?:'ve| have)\s+(?:found|search|call|execut|fetch|retriev|identif|formul|determin|confirm|noted|construct)/i,
     // "I need to ..." / "I want to ..."
@@ -92,6 +107,10 @@ const filterAgentDisplay = (text: string): string => {
     /^\s*(?:search|look|fetch|call|execut|retriev|query|find)ing\b/i,
     // "Now searching / Now I will ..."
     /^\s*now\s+(?:i\s+)?(?:search|look|call|fetch|execut)/i,
+    // "My query ..." / "My search ..."
+    /^\s*my\s+(?:query|search|request)\b/i,
+    // "Using the tool ..."
+    /^\s*using the tool\b/i,
     // Lines that mention tool names directly
     /\bfind_shopping_items\b|\bsuggest_substitution\b|\badd_to_cart\b|\bget_weather\b|\bget_calendar\b/i,
     // "Using the X tool", "Calling the X tool"
@@ -498,6 +517,8 @@ function App() {
   // Stable refs to avoid stale closure inside onmessage callback
   const productsLookupRef = useRef<Map<string, Product>>(new Map());
   const apiKeyRef = useRef<string>('');
+  // Mirrors streamingEntryId state so the onmessage closure can read/clear it synchronously
+  const streamingEntryIdRef = useRef<string | null>(null);
 
   // Audio state
   const [isMicEnabled, setIsMicEnabled] = useState(true);
@@ -511,9 +532,11 @@ function App() {
   const isSoundEnabledRef = useRef(false);
   // Pre-loaded context injected into systemInstruction before first session
   const startupContextRef = useRef<string>('');
+  // Text queued from a suggestion click before the session was open
+  const pendingSuggestionRef = useRef<string | null>(null);
 
-  // Live streaming text shown while agent is responding
-  const [liveAgentText, setLiveAgentText] = useState<string>('');
+  // ID of the chat entry currently being streamed — drives the blinking cursor via state (not ref)
+  const [streamingEntryId, setStreamingEntryId] = useState<string | null>(null);
 
   // Streaming buffers
   const userStreamingTextRef = useRef<string>('');
@@ -619,15 +642,11 @@ function App() {
     setLogs(prev => [...prev.slice(-50), { timestamp: new Date().toLocaleTimeString(), sender, text }]);
   };
 
-  const addChatMessage = (role: 'user' | 'agent', text: string) => {
-    const entry: TextChatEntry = {
-      id: `msg-${Date.now()}-${Math.random().toString(36).substr(2, 5)}`,
-      type: 'text',
-      role,
-      text,
-      timestamp: new Date().toLocaleTimeString(),
-    };
+  const addChatMessage = (role: 'user' | 'agent', text: string): string => {
+    const id = `msg-${Date.now()}-${Math.random().toString(36).substr(2, 5)}`;
+    const entry: TextChatEntry = { id, type: 'text', role, text, timestamp: new Date().toLocaleTimeString() };
     setChatHistory(prev => [...prev, entry]);
+    return id;
   };
 
   const updateLastChatMessage = (role: 'user' | 'agent', text: string) => {
@@ -824,6 +843,14 @@ function App() {
             sessionPromise.then(session => {
               liveSessionRef.current = session;
               addLog('system', '✅ Session initialized');
+              // Send any suggestion that was queued before the session opened
+              if (pendingSuggestionRef.current) {
+                const pending = pendingSuggestionRef.current;
+                pendingSuggestionRef.current = null;
+                addChatMessage('user', pending);
+                addLog('user', pending);
+                session.sendClientContent({ turns: [{ parts: [{ text: pending }] }] });
+              }
             }).catch(err => {
               console.error('Session error:', err);
               addLog('system', `❌ Session failed: ${err?.message}`);
@@ -876,19 +903,24 @@ function App() {
               hasUpdates = true;
             }
 
-            // Agent speech transcript (AUDIO modality) — accumulate for fallback, do NOT stream to chat
-            // (sub-word tokens arrive without spaces; we use textOnlyBufferRef for proper chat display)
+            // Agent speech transcript (AUDIO modality) — stream to chat in real time
             if (msg.serverContent?.outputTranscription?.text) {
               const newText = stripThinking(msg.serverContent.outputTranscription.text);
               const prev = agentStreamingTextRef.current;
               const needsSpace = prev.length > 0 && !/\s$/.test(prev) && !/^\s/.test(newText);
               agentStreamingTextRef.current += (needsSpace ? ' ' : '') + newText;
               hasAudioTranscriptRef.current = true;
+              // Create the agent bubble on the very first chunk
+              if (currentStreamingRole.current !== 'agent') {
+                currentStreamingRole.current = 'agent';
+                const id = addChatMessage('agent', '');
+                setStreamingEntryId(id);
+                streamingEntryIdRef.current = id;
+              }
               hasUpdates = true;
             }
 
-            // Agent text response (TEXT modality) — accumulate only, never render mid-stream
-            // (may contain tool narration / thinking; shown only at turnComplete if no audio)
+            // Agent text response (TEXT modality) — stream to chat in real time
             if (msg.serverContent?.modelTurn?.parts) {
               for (const part of msg.serverContent.modelTurn.parts) {
                 if (part.text) {
@@ -896,6 +928,13 @@ function App() {
                   const prevBuf = textOnlyBufferRef.current;
                   const sep = prevBuf.length > 0 && !/\s$/.test(prevBuf) && !/^\s/.test(chunk) ? ' ' : '';
                   textOnlyBufferRef.current += sep + chunk;
+                  // Create the agent bubble on the very first chunk
+                  if (currentStreamingRole.current !== 'agent') {
+                    currentStreamingRole.current = 'agent';
+                    const id = addChatMessage('agent', '');
+                    setStreamingEntryId(id);
+                    streamingEntryIdRef.current = id;
+                  }
                   hasUpdates = true;
                 }
               }
@@ -918,10 +957,11 @@ function App() {
                 if (currentStreamingRole.current === 'user' && userStreamingTextRef.current.trim()) {
                   updateLastChatMessage('user', userStreamingTextRef.current.trim());
                 }
-                // Stream agent text live (text modality — properly spaced)
-                if (textOnlyBufferRef.current) {
-                  const filtered = filterAgentDisplay(textOnlyBufferRef.current).trim();
-                  if (filtered) setLiveAgentText(filtered);
+                // Stream agent text into the chat bubble in real time
+                if (currentStreamingRole.current === 'agent') {
+                  const source = textOnlyBufferRef.current.trim() || agentStreamingTextRef.current;
+                  const filtered = filterAgentDisplay(source).trim();
+                  if (filtered) updateLastChatMessage('agent', filtered);
                 }
                 lastUIUpdateRef.current = now;
               }
@@ -942,7 +982,8 @@ function App() {
               textOnlyBufferRef.current = '';
               hasAudioTranscriptRef.current = false;
               currentStreamingRole.current = null;
-              setLiveAgentText('');
+              streamingEntryIdRef.current = null;
+              setStreamingEntryId(null);
               addLog('system', 'INTERRUPTED');
               setAgentState(AgentState.LISTENING);
             }
@@ -956,15 +997,15 @@ function App() {
                 userStreamingTextRef.current = '';
               }
 
-              // Prefer textOnlyBufferRef (text modality — properly spaced) over audio transcript.
-              // Audio transcript sub-word tokens arrive without spaces and produce merged words.
+              // Finalize the streamed bubble with the best available text source
               const textSource = textOnlyBufferRef.current.trim()
                 ? textOnlyBufferRef.current
                 : agentStreamingTextRef.current;
 
               const finalText = filterAgentDisplay(textSource).trim();
               if (finalText) {
-                addChatMessage('agent', finalText);
+                // Bubble was already created on first chunk — just write the final clean text
+                updateLastChatMessage('agent', finalText);
                 addLog('agent', finalText);
               }
 
@@ -973,7 +1014,8 @@ function App() {
               hasAudioTranscriptRef.current = false;
               currentStreamingRole.current = null;
               lastUIUpdateRef.current = 0;
-              setLiveAgentText('');
+              streamingEntryIdRef.current = null;
+              setStreamingEntryId(null);
 
               if (!audioPlayerRef.current?.isPlaying) {
                 setAgentState(AgentState.LISTENING);
@@ -987,12 +1029,17 @@ function App() {
               addLog('system', `🔧 TOOL CALL: ${toolNames}`);
               console.log('Tool calls received:', msg.toolCall.functionCalls);
 
-              // Discard any pre-tool narration ("Let me search for...", "I'll use the tool...")
+              // Discard any pre-tool narration — clear buffers AND remove the partial bubble
               textOnlyBufferRef.current = '';
               agentStreamingTextRef.current = '';
               hasAudioTranscriptRef.current = false;
               currentStreamingRole.current = null;
-              setLiveAgentText('');
+              if (streamingEntryIdRef.current) {
+                const idToRemove = streamingEntryIdRef.current;
+                setChatHistory(prev => prev.filter(e => e.id !== idToRemove));
+              }
+              streamingEntryIdRef.current = null;
+              setStreamingEntryId(null);
 
               for (const call of msg.toolCall.functionCalls) {
                 addLog('agent', `▶️ EXEC: ${call.name}`);
@@ -1004,8 +1051,7 @@ function App() {
                   if (call.name === 'find_shopping_items') {
                     const args = call.args as any;
                     const queries: string[] = Array.isArray(args.queries) ? args.queries : [args.queries || args.query_text || ''];
-                    // Fetch extra so that after image-URL filtering we still show up to 6 valid cards per query
-                    const perQueryLimit = args.limit || 12;
+                    const perQueryLimit = args.limit || 50;
                     const multiStore = args.multi_store || false;
                     const queryGroups: { query: string; products: Product[] }[] = [];
                     for (const q of queries) {
@@ -1196,7 +1242,12 @@ function App() {
   };
 
   const sendSuggestion = (text: string) => {
-    if (agentState === AgentState.DISCONNECTED) return;
+    if (agentState === AgentState.DISCONNECTED) {
+      // Queue the text and connect — it will be sent automatically once the session opens
+      pendingSuggestionRef.current = text;
+      connect();
+      return;
+    }
     addChatMessage('user', text);
     addLog('user', text);
     if (liveSessionRef.current) {
@@ -1641,7 +1692,8 @@ function App() {
           )}
           {chatHistory.map((entry) => {
             if (entry.type === 'text') {
-              return <ChatMessage key={entry.id} role={entry.role} text={entry.text} timestamp={entry.timestamp} />;
+              const isStreamingEntry = entry.role === 'agent' && entry.id === streamingEntryId;
+              return <ChatMessage key={entry.id} role={entry.role} text={entry.text} timestamp={entry.timestamp} isStreaming={isStreamingEntry} />;
             }
             if (entry.type === 'product_results') {
               return (
@@ -1665,15 +1717,6 @@ function App() {
             }
             return null;
           })}
-          {/* Live streaming agent message */}
-          {liveAgentText && (
-            <ChatMessage
-              role="agent"
-              text={liveAgentText}
-              timestamp={new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
-              isStreaming
-            />
-          )}
           <div ref={chatEndRef} />
         </div>
 
@@ -1812,7 +1855,7 @@ function App() {
                         setChatHistory([]);
                         setProducts([]);
                         setSearchQueryGroups([]);
-                        setLiveAgentText('');
+                        setStreamingEntryId(null);
                         userStreamingTextRef.current = '';
                         agentStreamingTextRef.current = '';
                         textOnlyBufferRef.current = '';
