@@ -40,9 +40,14 @@ export const ChatMessage: React.FC<ChatMessageProps> = ({ role, text, timestamp,
           <span className="text-[10px] font-semibold text-gray-500">Shopping AI</span>
           <span className="text-[10px] text-gray-400">{timestamp}</span>
         </div>
-        <div className="bg-white text-gray-800 rounded-2xl rounded-tl-sm px-4 py-2.5 text-sm leading-relaxed border border-gray-100 shadow-sm break-words relative pb-4">
+        <div className="bg-white text-gray-800 rounded-2xl rounded-tl-sm px-4 py-2.5 text-sm leading-relaxed border border-gray-100 shadow-sm break-words relative">
           <div className="markdown-body prose prose-sm prose-blue max-w-none">
-            <ReactMarkdown remarkPlugins={[remarkGfm]}>
+            <ReactMarkdown
+              remarkPlugins={[remarkGfm]}
+              components={{
+                a: ({ node, ...props }) => <a target="_blank" rel="noopener noreferrer" {...props} />,
+              }}
+            >
               {text}
             </ReactMarkdown>
           </div>

@@ -161,7 +161,7 @@ export const getSystemConfig = async (): Promise<SystemConfig | null> => {
     try {
         const url = `${API_HOST}/api/v1/config`;
         log(`[REQUEST] GET ${url}`);
-        const response = await fetchWithTimeout(url, { method: 'GET' }, 5000);
+        const response = await fetchWithTimeout(url, { method: 'GET', headers: HEADERS }, 5000);
         if (!response.ok) return null;
         const data = await response.json();
         log(`[RESPONSE] Config loaded: ${data.status}`);
