@@ -43,14 +43,82 @@ class BigQueryClient:
         if product and 'product_id' in product:
             self._cache[str(product['product_id'])] = product
 
-    def get_existing_product_ids(self) -> set:
+    def get_existing_product_ids(self, store: str = None) -> set:
         """Fetch all existing product IDs from BigQuery for deduplication"""
         query = f"SELECT product_id FROM `{self.table}`"
+        if store:
+            query += f" WHERE store = '{store}'"
         logger.info(f"Fetching existing product IDs from {self.table}...")
         df = self.client.query(query).to_dataframe()
         if not df.empty:
             return set(df['product_id'].astype(str).tolist())
         return set()
+
+    def save_categories(self, categories: dict, store: str) -> int:
+        """
+        Save/refresh category name→slug mappings to BigQuery.
+        Replaces all rows for the given store (WRITE_TRUNCATE filtered by store).
+
+        Args:
+            categories: Dict of {category_name: category_slug}
+            store: Store slug (e.g. 'carrefour_park_lake')
+
+        Returns:
+            Number of rows written
+        """
+        from datetime import datetime, timezone
+
+        categories_table = f"{self.dataset}.{settings.BQ_CATEGORIES_TABLE}"
+        rows = [
+            {"category_name": name, "category_slug": slug, "store": store,
+             "updated_at": datetime.now(timezone.utc).isoformat()}
+            for name, slug in categories.items()
+        ]
+        df = pd.DataFrame(rows)
+
+        # Delete existing rows for this store, then append fresh data
+        delete_query = (
+            f"DELETE FROM `{categories_table}` WHERE store = '{store}'"
+        )
+        try:
+            self.client.query(delete_query).result()
+        except Exception:
+            # Table may not exist yet — the load job below will create it
+            pass
+
+        job_config = bigquery.LoadJobConfig(
+            write_disposition=bigquery.WriteDisposition.WRITE_APPEND,
+            autodetect=True,
+        )
+        job = self.client.load_table_from_dataframe(df, categories_table, job_config=job_config)
+        job.result()
+        logger.info(f"✓ Saved {len(rows)} categories for store '{store}' to {categories_table}")
+        return len(rows)
+
+    def load_categories_from_bq(self, store: str) -> dict:
+        """
+        Load category name→slug mappings from BigQuery.
+
+        Returns:
+            Dict of {category_name: category_slug}, empty dict if table/rows not found
+        """
+        categories_table = f"{self.dataset}.{settings.BQ_CATEGORIES_TABLE}"
+        query = (
+            f"SELECT category_name, category_slug FROM `{categories_table}` "
+            f"WHERE store = '{store}'"
+        )
+        try:
+            df = self.client.query(query).to_dataframe()
+        except Exception as e:
+            logger.warning(f"Could not load categories from BQ: {e}")
+            return {}
+
+        if df.empty:
+            return {}
+
+        categories = dict(zip(df["category_name"], df["category_slug"]))
+        logger.info(f"✓ Loaded {len(categories)} categories for store '{store}' from BigQuery")
+        return categories
 
     def insert_products_df(self, df: pd.DataFrame) -> int:
         """

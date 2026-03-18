@@ -35,108 +35,126 @@ logger = logging.getLogger("bringo_pipeline")
 
 async def extract_categories_dynamically(store: str = "carrefour_park_lake") -> dict:
     """
-    Extract categories dynamically from Bringo website using Python.
-    This is the preferred method for getting fresh category data.
+    Extract ALL categories from the Bringo store-details page.
+    Falls back to sidebar scraping if store-details doesn't return results.
     """
     import ssl
     import aiohttp
-    
-    logger.info("🔍 Extracting categories dynamically from Bringo...")
-    
+    from bs4 import BeautifulSoup
+
+    logger.info(f"🔍 Extracting ALL categories for store '{store}'...")
+
+    ssl_context = ssl.create_default_context()
+    ssl_context.check_hostname = False
+    ssl_context.verify_mode = ssl.CERT_NONE
+    connector = aiohttp.TCPConnector(ssl=ssl_context)
+
+    headers = {
+        'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36',
+        'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
+        'Accept-Language': 'ro-RO,ro;q=0.9,en-US;q=0.8,en;q=0.7',
+        'Referer': 'https://www.bringo.ro/',
+    }
+
+    # Try to reuse an existing authenticated session
     try:
-        from bringo_catalog.bringo_products_v3 import extract_categories_from_page
-        
-        # Create SSL context
-        ssl_context = ssl.create_default_context()
-        ssl_context.check_hostname = False
-        ssl_context.verify_mode = ssl.CERT_NONE
-        connector = aiohttp.TCPConnector(ssl=ssl_context)
-        
-        async with aiohttp.ClientSession(connector=connector) as session:
+        from api.tools.authentication import get_authentication_from_state
+        import json as _json
+        auth_state = _json.loads(get_authentication_from_state())
+        if auth_state.get('status') == 'authenticated':
+            phpsessid = auth_state.get('session_cookie')
+            headers['Cookie'] = f'PHPSESSID={phpsessid}'
+            logger.info("🔐 Using existing authenticated session for category extraction")
+    except Exception:
+        pass  # Auth not available — proceed unauthenticated
+
+    async with aiohttp.ClientSession(connector=connector) as session:
+        # Method 1: store-details page — full category grid (requires auth)
+        store_details_url = f"https://www.bringo.ro/ro/store-details/{store}"
+        try:
+            async with session.get(store_details_url, headers=headers, allow_redirects=True) as resp:
+                final_url = str(resp.url)
+                if resp.status == 200 and final_url not in (
+                    "https://www.bringo.ro/ro/", "https://www.bringo.ro/"
+                ):
+                    html = await resp.text()
+                    soup = BeautifulSoup(html, 'html.parser')
+                    grid_box = soup.find('div', class_='bringo-category-list-box')
+                    if grid_box:
+                        links = grid_box.find_all('a', class_='box-inner')
+                        categories = {}
+                        for link in links:
+                            href = link.get('href', '')
+                            h4 = link.find('h4')
+                            name = h4.get_text(strip=True) if h4 else link.get_text(strip=True)
+                            slug = href.strip('/').split('/')[-1]
+                            if name and slug:
+                                categories[name] = slug
+                        if categories:
+                            logger.info(f"✅ Extracted {len(categories)} categories from store-details page")
+                            return categories
+                        logger.warning("⚠️ store-details page loaded but no categories found in grid")
+                    else:
+                        logger.warning("⚠️ bringo-category-list-box not found — page may require authentication")
+                else:
+                    logger.warning(f"⚠️ store-details redirected or failed (status={resp.status})")
+        except Exception as e:
+            logger.warning(f"⚠️ store-details fetch failed: {e}")
+
+        # Method 2: sidebar fallback from a single category page (partial list)
+        logger.info("↩️ Falling back to sidebar extraction from a category page...")
+        try:
+            from bringo_catalog.bringo_products_v3 import extract_categories_from_page
             categories = await extract_categories_from_page(session, store)
-            
             if categories:
-                logger.info(f"✅ Extracted {len(categories)} categories dynamically")
+                logger.info(f"✅ Extracted {len(categories)} categories via sidebar fallback")
                 return categories
-            else:
-                logger.warning("⚠️ Dynamic extraction returned no categories")
-                return {}
-                
-    except Exception as e:
-        logger.warning(f"⚠️ Dynamic category extraction failed: {e}")
-        return {}
+        except Exception as e:
+            logger.warning(f"⚠️ Sidebar fallback failed: {e}")
 
-
-def load_categories_from_json() -> dict:
-    """Load categories from static JSON file (fallback)"""
-    categories_file = PROJECT_ROOT / "bringo_catalog" / "bringo_categories.json"
-    if not categories_file.exists():
-        logger.error(f"Categories file not found: {categories_file}")
-        return {}
-    
-    with open(categories_file, 'r', encoding='utf-8') as f:
-        categories = json.load(f)
-        logger.info(f"📄 Loaded {len(categories)} categories from JSON file")
-        return categories
+    logger.warning("⚠️ All category extraction methods returned no results")
+    return {}
 
 
 def load_categories(use_dynamic: bool = False, store: str = "carrefour_park_lake") -> dict:
     """
-    Load categories - enforces standard names from JSON, optional dynamic validation.
-    Defaults to JSON only (use_dynamic=False) to ensure stability.
-    
+    Load categories from BigQuery. If BQ is empty, extract dynamically from the
+    live site and save the results back to BQ for future runs.
+
     Args:
-        use_dynamic: Whether to check dynamic extraction to validate availability
-        store: Store slug for dynamic extraction
-        
+        use_dynamic: When True, always re-extract from the live site and refresh BQ.
+        store: Store slug used for both dynamic extraction and BQ filtering.
+
     Returns:
-        Dict of {category_name: category_slug} where names match JSON
+        Dict of {category_name: category_slug}
     """
-    # 1. Load Standard Categories (Source of Truth for Names)
-    std_categories = load_categories_from_json()
-    if not std_categories:
-        logger.error("❌ Failed to load standard categories. Cannot proceed.")
+    from data.bigquery_client import BigQueryClient
+
+    bq_client = BigQueryClient()
+
+    # 1. Try BigQuery first (skip if --dynamic-categories forces a refresh)
+    if not use_dynamic:
+        categories = bq_client.load_categories_from_bq(store)
+        if categories:
+            return categories
+        logger.info("📭 No categories in BigQuery yet — extracting dynamically...")
+
+    # 2. Extract dynamically from live site
+    logger.info(f"🔍 Extracting categories dynamically for store '{store}'...")
+    categories = asyncio.run(extract_categories_dynamically(store))
+
+    if not categories:
+        logger.error("❌ Dynamic category extraction returned no results. Cannot proceed.")
         sys.exit(1)
-        
-    # Invert for Slug -> Name lookup
-    std_slug_map = {slug: name for name, slug in std_categories.items()}
-    
-    final_categories = {}
-    
-    # 2. Dynamic Discovery (Validation)
-    if use_dynamic:
-        logger.info("🔍 Validating categories against live site...")
-        dyn_categories = asyncio.run(extract_categories_dynamically(store))
-        
-        if dyn_categories:
-            # Map dynamic slugs back to Standard Names
-            found_count = 0
-            for dyn_name, dyn_slug in dyn_categories.items():
-                if dyn_slug in std_slug_map:
-                    std_name = std_slug_map[dyn_slug]
-                    final_categories[std_name] = dyn_slug
-                    found_count += 1
-                else:
-                    logger.debug(f"Skipping non-standard category: {dyn_name} ({dyn_slug})")
-            
-            logger.info(f"✅ Matched {found_count} live categories to standard JSON names.")
-            
-            # Warn about missing ones
-            missing = set(std_categories.keys()) - set(final_categories.keys())
-            if missing:
-                logger.warning(f"⚠️ {len(missing)} standard categories not found live: {list(missing)[:5]}...")
-        else:
-            logger.warning("⚠️ Dynamic validation failed or returned empty. Falling back to full JSON list.")
-            final_categories = std_categories
-    else:
-        # Trust JSON completely
-        final_categories = std_categories
-    
-    if not final_categories:
-        logger.error("❌ No valid categories found!")
-        sys.exit(1)
-    
-    return final_categories
+
+    # 3. Save to BigQuery so future runs don't need dynamic extraction
+    try:
+        bq_client.save_categories(categories, store)
+        logger.info(f"✅ Saved {len(categories)} categories to BigQuery for store '{store}'")
+    except Exception as e:
+        logger.warning(f"⚠️ Could not save categories to BigQuery: {e} — continuing anyway")
+
+    return categories
 
 
 async def scrape_single_category(category_name: str, category_slug: str, fetch_details: bool = True, existing_ids: set = None) -> dict:

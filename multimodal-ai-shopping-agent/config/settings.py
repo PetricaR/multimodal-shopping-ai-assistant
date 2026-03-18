@@ -32,6 +32,7 @@ class Settings(BaseSettings):
     # BigQuery Settings
     BQ_DATASET: str = "bringo_products_data"
     BQ_TABLE: str = "bringo_products_native"  # Native table (faster than Google Sheets external table)
+    BQ_CATEGORIES_TABLE: str = "bringo_categories"  # Stores scraped category name→slug mappings
     BQ_OUTPUT_DATASET: str = "bringo_similarity_search_multimodal"
     BQ_SEARCH_LOG_TABLE: str = "search_query_logs"
     BQ_SEARCH_LOG_ENABLED: bool = True

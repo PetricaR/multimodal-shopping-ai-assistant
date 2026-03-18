@@ -15,7 +15,6 @@ Steps:
 Usage:
     python pipeline/run_pipeline.py
 """
-
 import sys
 import os
 import asyncio
@@ -94,8 +93,6 @@ class BringoPipeline:
         except Exception as e:
             logger.error(f"Scraper module execution failed: {e}")
             raise
-
-    # ... (Step 2 and onwards remain same) ...
 
     @timer
     def step_2_fetch_data(self):
