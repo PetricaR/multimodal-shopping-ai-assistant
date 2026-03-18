@@ -1,0 +1,5 @@
+{
+  "python.defaultInterpreterPath": "/Users/radanpetrica/PFA/hackathons/gemini-live-agent-challange/multimodal-shopping-ai-assistant/agent_env/bin/python",
+  "python.terminal.activateEnvironment": true,
+  "python.terminal.activateEnvInCurrentTerminal": true
+}
